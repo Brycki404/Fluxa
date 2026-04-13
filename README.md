@@ -9,7 +9,7 @@ If you have questions I suggest joining my Discord server: https://discord.gg/ub
 
 ## ⚠️Project Status Notice
 Fluxa is currently in **active development**, and the API, structure, and features are subject to change as the library evolves.
-Full documentation is not available yet -- it will be added once the API stabilizes.
+Full documentation is not completed yet -- it will continuously be added on to as the API stabilizes.
 For now, you can learn the basics by exploring the demo place included in this repository.
 Additional examples will be created for every feature in future updates.
 
