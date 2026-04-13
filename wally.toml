@@ -1,7 +1,7 @@
 [package]
 name = "brycki404/fluxa"
-description = "Custom Animator"
-version = "1.0.1"
+description = "Custom Runtime Animation Engine"
+version = "1.0.2"
 registry = "https://github.com/UpliftGames/wally-index"
 include = [
      "src"
@@ -16,6 +16,9 @@ exclude = [
      "docs",
      ".gitignore",
      "node_modules",
+     "DevPackages",
+     "dev",
+     "dev.project.json",
 ]
 realm = "shared"
 
@@ -24,4 +27,3 @@ realm = "shared"
 [server-dependencies]
 
 [dev-dependencies]
-Iris = "sirmallard/iris@2.5.1"
