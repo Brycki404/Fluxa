@@ -5,10 +5,17 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local AnimationAsset = require(ReplicatedStorage.Packages.fluxa.AnimationAsset)
 local AnimationPlayer = require(ReplicatedStorage.Packages.fluxa.AnimationPlayer)
 local Pose = require(ReplicatedStorage.Packages.fluxa.Pose)
-local Motor6DWriter = require(ReplicatedStorage.Packages.fluxa.Motor6DWriter)
+local UniversalJointWriter = require(ReplicatedStorage.Packages.fluxa.UniversalJointWriter)
 
 local player = game.Players.LocalPlayer
 local character = player.Character or player.CharacterAdded:Wait()
+
+local humanoid = character:FindFirstChildOfClass("Humanoid")
+local animator = humanoid:FindFirstChildOfClass("Animator")
+if animator then
+	animator:Destroy()
+end
+
 local _humanoidRootPart = character:WaitForChild("HumanoidRootPart")
 
 -- Test parameters
@@ -32,7 +39,7 @@ local animAssets = {}
 -- Try to load animations from ReplicatedStorage
 local animFolder = game:GetService("ReplicatedStorage"):FindFirstChild("Animations")
 if animFolder then
-	for _, anim in ipairs(animFolder:GetChildren()) do
+	for _: number, anim: Instance in ipairs(animFolder:GetChildren()) do
 		if anim:IsA("KeyframeSequence") then
 			print("Loading animation:", anim.Name)
 			animAssets[anim.Name] = AnimationAsset.new(anim, { Name = anim.Name })
@@ -42,15 +49,15 @@ end
 
 -- Create animation players for each direction
 local players = {
-	Idle = AnimationPlayer.new(animAssets.Idle or animAssets[next(animAssets)] or {}, { Speed = 1, Loop = true }),
-	Forward = AnimationPlayer.new(animAssets.WalkForward or animAssets[next(animAssets)] or {}, { Speed = 1, Loop = true }),
-	Right = AnimationPlayer.new(animAssets.WalkRight or animAssets[next(animAssets)] or {}, { Speed = 1, Loop = true }),
-	Back = AnimationPlayer.new(animAssets.WalkBack or animAssets[next(animAssets)] or {}, { Speed = 1, Loop = true }),
-	Left = AnimationPlayer.new(animAssets.WalkLeft or animAssets[next(animAssets)] or {}, { Speed = 1, Loop = true }),
+	Idle = AnimationPlayer.new(animAssets.Idle or {}, { Speed = 1, Loop = true }),
+	Forward = AnimationPlayer.new(animAssets.WalkForward or {}, { Speed = 1, Loop = true }),
+	Right = AnimationPlayer.new(animAssets.WalkRight or {}, { Speed = 1, Loop = true }),
+	Back = AnimationPlayer.new(animAssets.WalkBack or {}, { Speed = 1, Loop = true }),
+	Left = AnimationPlayer.new(animAssets.WalkLeft or {}, { Speed = 1, Loop = true }),
 }
 
 local currentDirection = "Idle"
-local _jointMap = Motor6DWriter.BuildJointMap(character)
+local jointMap, retarget = UniversalJointWriter.BuildJointMap(character)
 
 -- Start with Idle
 if players[currentDirection] then
@@ -106,36 +113,37 @@ runService.RenderStepped:Connect(function(deltaTime)
 	
 	-- Update active player
 	local activeSample = players[currentDirection]:Update(deltaTime)
-	
-	-- Get blend tree weights (simple: 100% current animation)
+
 	local blendWeights = {
 		[currentDirection] = 1,
 	}
-	
-	-- Blend all animations
+
+	warn("Motor6Ds:", jointMap)
+
 	blendedPose = Pose.new({})
-	for direction, weight in pairs(blendWeights) do
-		local sample = players[direction]:Update(0)
-		if weight > 0 and next(sample.Transforms) then
-			for joint, transform in pairs(sample.Transforms) do
-				if not blendedPose.Data[joint] then
-					blendedPose.Data[joint] = transform
-				else
-					blendedPose.Data[joint] = blendedPose.Data[joint]:Lerp(transform, weight)
-				end
+	for _direction, weight in pairs(blendWeights) do
+		warn("Sample joints:", activeSample.Transforms)
+		for joint: string, transform: Pose.PoseData in pairs(activeSample.Transforms) do
+			if not blendedPose.Data[joint] then
+				blendedPose.Data[joint] = transform
+			else
+				blendedPose.Data[joint] = blendedPose.Data[joint]:Lerp(transform, weight)
 			end
 		end
 	end
 	
-	-- Use the active animation's sample
-	blendedPose.Data = activeSample.Transforms
+	-- -- Use the active animation's sample
+	-- blendedPose.Data = activeSample.Transforms
 	
-	-- Apply to character
-	Motor6DWriter.ApplyPose(character, blendedPose.Data)
+	-- -- Apply to character
+	-- Motor6DWriter.ApplyPose(character, blendedPose.Data)
+
+	-- Apply blended pose
+	UniversalJointWriter.ApplyPose(jointMap, retarget, blendedPose.Data)
 	
 	testParams.Time = testParams.Time + deltaTime
 end)
 
 print("Animation test script loaded!")
-print("Controls: E=Forward, Q=Back, D=Right, A=Left")
+print("Controls: W=Forward, S=Back, D=Right, A=Left")
 print("Loaded", countDictionary(animAssets), "animations")
