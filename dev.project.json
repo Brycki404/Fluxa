@@ -1,0 +1,42 @@
+{
+  "name": "fluxa-dev",
+  "tree": {
+    "$className": "DataModel",
+    "ReplicatedStorage": {
+      "$className": "ReplicatedStorage",
+      "Packages": {
+        "$className": "Folder",
+        "fluxa": {
+          "$path": "default.project.json"
+        }
+      },
+      "DevPackages": {
+        "$className": "Folder",
+        "$path": "DevPackages"
+      },
+      "$path": "dev/ReplicatedStorage"
+    },
+    "ServerScriptService": {
+      "$className": "ServerScriptService",
+      "ServerPackages": {
+        "$path": "ServerPackages"
+      },
+      "$path": "dev/ServerScriptService"
+    },
+    "StarterPlayer": {
+      "$className": "StarterPlayer",
+      "StarterCharacterScripts": {
+        "$className": "StarterCharacterScripts",
+        "$path": "dev/StarterPlayer/StarterCharacterScripts"
+      },
+      "StarterPlayerScripts": {
+        "$className": "StarterPlayerScripts",
+        "$path": "dev/StarterPlayer/StarterPlayerScripts"
+      }
+    },
+    "ReplicatedFirst": {
+      "$className": "ReplicatedFirst",
+      "$path": "dev/ReplicatedFirst"
+    }
+  }
+}

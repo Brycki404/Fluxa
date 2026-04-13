@@ -1,0 +1,23 @@
+[package]
+name = "brycki404/fluxa"
+version = "0.1.0"
+registry = "https://github.com/UpliftGames/wally-index"
+exclude = [
+     ".vscode",
+     "rokit.toml",
+     ".luaurc",
+     "sourcemap.json",
+     "selene.toml",
+     "README.md",
+     "docs",
+     ".gitignore",
+     "node_modules",
+]
+realm = "shared"
+
+[dependencies]
+
+[server-dependencies]
+
+[dev-dependencies]
+Iris = "sirmallard/iris@2.5.1"

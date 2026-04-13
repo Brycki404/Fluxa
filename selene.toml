@@ -1,0 +1,8 @@
+std = "roblox"
+
+[config]
+# Allow requiring modules from Wally's Packages folder
+include = ["src", "Packages", "dev", "ServerPackages", "DevPackages"]
+
+[config.globals]
+# If your module exposes globals (rare), declare them here
