@@ -36,3 +36,4 @@ Name them:
 - WalkRight
 - WalkBackward
 - WalkForward
+- Idle
