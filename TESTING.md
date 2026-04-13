@@ -14,21 +14,25 @@
    - Choose "default" configuration
 
 3. **Place Structure:**
-   - `ReplicatedStorage.AnimationSystem` — All animation system modules
-   - `StarterPlayer.StarterPlayerScripts.TestScript` — Client test script
+   - `ReplicatedStorage.Animations` — Folder of all the animations (KeyframeSequences) that you plan to load into your 'animator'
+   - `StarterPlayer.StarterPlayerScripts.Client` — Client test script
 
 ## File Locations
 
 - Animation modules: `src/shared/AnimationSystem/`
-- Client test script: `src/client/init.client.luau`
-- Server scripts: `src/server/` (deployed to ServerScriptService)
+- Client test script: `dev/StarterPlayer/StarterPlayerScripts/Client/init.client.luau`
 
 ## Test Script
 
-The client test script loads automatically on player spawn. Controls:
+The client test script loads automatically on first player spawn. Controls:
 - **E** — Walk Forward
 - **Q** — Walk Backward
 - **D** — Walk Right
 - **A** — Walk Left
 
 Place your KeyframeSequences in ReplicatedStorage.Animations for the test script to find them.
+Name them:
+- WalkLeft
+- WalkRight
+- WalkBackward
+- WalkForward
