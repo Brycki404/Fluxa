@@ -22,5 +22,4 @@ Download the latest rbxl file from [Github Releases](https://github.com/Brycki40
 For more help, check out [the Rojo documentation](https://rojo.space/docs).
 
 ## Documentation
-
-Public documentation for Fluxa is available in the [`docs/`](docs/) folder and is published via GitHub Pages.
+Public documentation for Fluxa is available on my [Gitbook.io site](https://brycki404.gitbook.io/fluxa/)
