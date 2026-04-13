@@ -57,13 +57,6 @@ end
 
 local humanoidRootPart = character:WaitForChild("HumanoidRootPart")
 
--- Test parameters
-local testParams = {
-	Speed = 0,
-	Direction = 0, -- 0=Idle, 1=Forward, 2=Right, 3=Back, 4=Left
-	Time = 0,
-}
-
 local function countDictionary(d: {[any]: any}): number
 	local count: number = 0
 	for _i: any, _v: any in pairs(d) do
@@ -87,28 +80,23 @@ if animFolder then
 end
 
 -- Create animation players for each direction
-local players = {
+local animPlayers = {
 	Idle = AnimationPlayer.new(animAssets.Idle or {}, { Speed = 1, Loop = true }),
 	Forward = AnimationPlayer.new(animAssets.WalkForward or {}, { Speed = 1, Loop = true }),
 	Right = AnimationPlayer.new(animAssets.WalkRight or {}, { Speed = 1, Loop = true }),
-	Back = AnimationPlayer.new(animAssets.WalkBackward or {}, { Speed = 1, Loop = true }),
+	Backward = AnimationPlayer.new(animAssets.WalkBackward or {}, { Speed = 1, Loop = true }),
 	Left = AnimationPlayer.new(animAssets.WalkLeft or {}, { Speed = 1, Loop = true }),
 }
 
-local currentDirection: string = "Idle"
 local jointMap, retarget = UniversalJointWriter.BuildJointMap(character)
 
 -- Start with Idle
-if players[currentDirection] then
-	players[currentDirection]:Play()
+if animPlayers.Idle then
+	animPlayers.Idle:Play()
 end
-
--- Input handling for testing
-local UserInputService = game:GetService("UserInputService")
 
 -- Update loop
 local runService = game:GetService("RunService")
-local _FABRIK = require(ReplicatedStorage.Packages.fluxa.IK.FABRIK)
 local blendedPose = Pose.new({})
 
 runService.RenderStepped:Connect(function(deltaTime)
@@ -158,19 +146,19 @@ runService.RenderStepped:Connect(function(deltaTime)
 		["Idle"] = idleWeight;
 		["Forward"] = forwardWeight;
 		["Right"] = rightWeight;
-		["Back"] = backWeight;
+		["Backward"] = backWeight;
 		["Left"] = leftWeight;
 	}
 
 	-- Determine direction based on input
-	local directionNames = { "Idle", "Forward", "Right", "Back", "Left" }
+	local directionNames = { "Idle", "Forward", "Right", "Backward", "Left" }
 	for _i: number, directionName: string in ipairs(directionNames) do
 		if blendWeights[directionName] == 0 then
-			if players[directionName] and players[directionName].Playing then
-				players[directionName]:Stop()
+			if animPlayers[directionName] and animPlayers[directionName].Playing then
+				animPlayers[directionName]:Stop()
 			end
-		elseif players[directionName] and not players[directionName].Playing then
-			players[directionName]:Play()
+		elseif animPlayers[directionName] and not animPlayers[directionName].Playing then
+			animPlayers[directionName]:Play()
 		end
 	end
 
@@ -179,7 +167,7 @@ runService.RenderStepped:Connect(function(deltaTime)
 
 	for directionName, weight in pairs(blendWeights) do
 		if weight > 0 then
-			local aplr = players[directionName]
+			local aplr = animPlayers[directionName]
 			if aplr and aplr.Playing then
 				local sample = aplr:Update(deltaTime)
 
@@ -199,8 +187,6 @@ runService.RenderStepped:Connect(function(deltaTime)
 
 	blendedPose = Pose.new(blended)
 	UniversalJointWriter.ApplyPose(jointMap, retarget, blendedPose.Data)
-	
-	testParams.Time = testParams.Time + deltaTime
 end)
 
 print("Animation test script loaded!")
