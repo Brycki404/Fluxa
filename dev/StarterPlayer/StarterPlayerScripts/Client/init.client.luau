@@ -36,6 +36,11 @@ end)
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
+-- You can require Fluxa and grab modules this way:
+-- local Fluxa = require(ReplicatedStorage.Packages.fluxa)
+-- local AnimationAsset = Fluxa.AnimationAsset
+
+-- but I prefer the method of just requiring modules manually for TypeScript-ability
 local AnimationAsset = require(ReplicatedStorage.Packages.fluxa.AnimationAsset)
 local AnimationPlayer = require(ReplicatedStorage.Packages.fluxa.AnimationPlayer)
 local Pose = require(ReplicatedStorage.Packages.fluxa.Pose)
