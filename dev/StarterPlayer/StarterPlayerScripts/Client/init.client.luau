@@ -42,7 +42,7 @@ if animFolder then
 	for _: number, anim: Instance in ipairs(animFolder:GetChildren()) do
 		if anim:IsA("KeyframeSequence") then
 			print("Loading animation:", anim.Name)
-			animAssets[anim.Name] = AnimationAsset.new(anim, { Name = anim.Name })
+			animAssets[anim.Name] = AnimationAsset.new(anim, anim.Name)
 		end
 	end
 end
@@ -85,17 +85,30 @@ UserInputService.InputBegan:Connect(function(input, gameProcessed)
 	end
 end)
 
-UserInputService.InputEnded:Connect(function(_input, _gameProcessed)
-	testParams.Direction = 0
-	testParams.Speed = 0
-end)
-
 -- Update loop
 local runService = game:GetService("RunService")
 local _FABRIK = require(ReplicatedStorage.Packages.fluxa.IK.FABRIK)
 local blendedPose = Pose.new({})
 
 runService.RenderStepped:Connect(function(deltaTime)
+	local keyCodeToCheckIfLetGoOf: Enum.KeyCode? = nil
+	if testParams.Direction == 1 then
+		keyCodeToCheckIfLetGoOf = Enum.KeyCode.W
+	elseif testParams.Direction == 3 then
+		keyCodeToCheckIfLetGoOf = Enum.KeyCode.S
+	elseif testParams.Direction == 2 then
+		keyCodeToCheckIfLetGoOf = Enum.KeyCode.D
+	elseif testParams.Direction == 4 then
+		keyCodeToCheckIfLetGoOf = Enum.KeyCode.A
+	end
+
+	if keyCodeToCheckIfLetGoOf ~= nil then
+		if not UserInputService:IsKeyDown(keyCodeToCheckIfLetGoOf) then
+			testParams.Direction = 0
+			testParams.Speed = 0
+		end
+	end
+
 	-- Determine direction based on input
 	local directionNames = { "Idle", "Forward", "Right", "Back", "Left" }
 	local newDirection = directionNames[testParams.Direction + 1]
@@ -118,12 +131,9 @@ runService.RenderStepped:Connect(function(deltaTime)
 		[currentDirection] = 1,
 	}
 
-	warn("Motor6Ds:", jointMap)
-
 	blendedPose = Pose.new({})
 	for _direction, weight in pairs(blendWeights) do
-		warn("Sample joints:", activeSample.Transforms)
-		for joint: string, transform: Pose.PoseData in pairs(activeSample.Transforms) do
+		for joint: string, transform: CFrame in pairs(activeSample.Transforms) do
 			if not blendedPose.Data[joint] then
 				blendedPose.Data[joint] = transform
 			else
