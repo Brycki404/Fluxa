@@ -6,6 +6,7 @@ Fluxa.BlendTree = require(script.BlendTree)
 Fluxa.Pose = require(script.Pose)
 Fluxa.Retargeting = require(script.Retargeting)
 Fluxa.UniversalJointWriter = require(script.UniversalJointWriter)
+Fluxa.FluxaController = require(script.FluxaController)
 
 Fluxa.IK = {}
 Fluxa.IK.CCD = require(script.IK.CCD)

@@ -4,6 +4,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local exs = ReplicatedStorage:WaitForChild("Examples")
 local ex1 = require(exs:WaitForChild("Example1"))
 local ex2 = require(exs:WaitForChild("Example2"))
+local ex3 = require(exs:WaitForChild("Example3"))
 
 local Players = game:GetService("Players")
 local LocalPlayer = Players.LocalPlayer
@@ -12,12 +13,14 @@ local EXAMPLE_ATTRIBUTE = "ex"
 local defaultExample: number = 2
 local thisExample: number = defaultExample
 
-local function characterRemoving(character: Model)
+local function characterRemoving(_character: Model)
 	local lastExample: number = 0 + thisExample
 	if lastExample == 1 then
 		ex1:Destroy()
 	elseif lastExample == 2 then
 		ex2:Destroy()
+	elseif lastExample == 3 then
+		ex3:Destroy()
 	end
 end
 
@@ -35,6 +38,8 @@ local function characterAdded(character: Model)
 		ex1:Start(script)
 	elseif thisExample == 2 then
 		ex2:Start(script)
+	elseif thisExample == 3 then
+		ex3:Start(script)
 	end
 end
 

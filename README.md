@@ -25,3 +25,42 @@ For more help, check out [the Rojo documentation](https://rojo.space/docs).
 
 ## Documentation
 Public documentation for Fluxa is available on my [Gitbook.io site](https://brycki404.gitbook.io/fluxa/)
+
+## FluxaController (Controller Creator)
+Fluxa now ships with an optional `FluxaController` module that acts as a single animation brain.
+It is designed so you can build your own controller graph instead of exposing raw `AnimationPlayer` instances across many scripts.
+
+### Why use it
+- Prevent animation conflicts by centralizing play/stop/blend decisions.
+- Keep all layer and blend-tree updates in one update loop.
+- Expose a clean public API to the rest of your game code.
+
+### Public API style
+```lua
+local Fluxa = require(ReplicatedStorage.Packages.fluxa)
+local controller = Fluxa.FluxaController.new({
+	Character = character,
+	AutoStart = true,
+	Params = {
+		Speed = 0,
+		Direction = Vector3.zero,
+	},
+})
+
+controller:Play("Walk")
+controller:Set("Speed", 10)
+controller:Set("Direction", Vector3.new(1, 0, 0))
+```
+
+### Core methods
+- `AddLayer(name, config)`
+- `SetLayerWeight(name, weight)`
+- `AddTrack(name, asset, config)`
+- `CreateBlendTree(name, resolver)`
+- `Play(trackName)` / `Stop(trackName?)`
+- `Set(key, value)` / `Get(key)`
+- `Start()` / `StopLoop()` / `Destroy()`
+
+### Example setup in this repo
+- `Example3` demonstrates a controller-centric workflow where movement/combat/camera drivers only call controller API methods.
+- To run it in the demo place, set `StarterPlayerScripts/Client.ex` to `3`.
