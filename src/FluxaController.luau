@@ -181,6 +181,8 @@ local function blendPoseOverride(target: PoseData, incoming: PoseData, weight: n
 		return
 	end
 
+	local alpha = clamp01(weight)
+
 	for joint, cf in pairs(incoming) do
 		if mask ~= nil and not mask[joint] then
 			continue
@@ -188,9 +190,10 @@ local function blendPoseOverride(target: PoseData, incoming: PoseData, weight: n
 
 		local existing = (target :: any)[joint]
 		if existing then
-			target[joint] = existing:Lerp(cf, clamp01(weight))
+			target[joint] = existing:Lerp(cf, alpha)
 		else
-			target[joint] = cf
+			-- No lower-layer pose for this joint: still honor layer weight for constructive stacking.
+			target[joint] = CFrame.new():Lerp(cf, alpha)
 		end
 	end
 end
@@ -216,39 +219,28 @@ local function blendPoseAdditive(target: PoseData, incoming: PoseData, weight: n
 	end
 end
 
-local function buildLayerPose(controller: ControllerInstance, layerName: string, dt: number): PoseData
-	local layerPose: PoseData = {}
-	local hasBase: {[string]: boolean} = {}
-
+local function blendLayerTracksIntoPose(controller: ControllerInstance, finalPose: PoseData, layerName: string, layer: LayerState, dt: number)
 	for _, trackName in ipairs(controller._trackNames) do
 		local track = controller._tracks[trackName]
-		if track.Layer ~= layerName then
-			continue
-		end
-
-		if not track.Track.Playing then
+		if track.Layer ~= layerName or not track.Track.Playing then
 			continue
 		end
 
 		local logicalWeight = controller._smoothedTrackWeights[trackName] or 0
 		local effectiveWeight = if logicalWeight > 0 then logicalWeight * track.Track.Weight else track.Track.Weight
+		-- Always update to advance fade weight and animation time, even if we won't blend this frame.
 		local sample = track.Track:Update(dt)
-
-		if effectiveWeight <= 0 then
+		local combinedWeight = clamp01(effectiveWeight * layer.Weight)
+		if combinedWeight <= 0 then
 			continue
 		end
 
-		for joint, cf in pairs(sample.Transforms) do
-			if not hasBase[joint] then
-				layerPose[joint] = CFrame.new():Lerp(cf, clamp01(effectiveWeight))
-				hasBase[joint] = true
-			else
-				layerPose[joint] = layerPose[joint]:Lerp(cf, clamp01(effectiveWeight))
-			end
+		if layer.BlendMode == "Additive" then
+			blendPoseAdditive(finalPose, sample.Transforms, combinedWeight, layer.Mask)
+		else
+			blendPoseOverride(finalPose, sample.Transforms, combinedWeight, layer.Mask)
 		end
 	end
-
-	return layerPose
 end
 
 local function resolveTrackWeights(controller: ControllerInstance, dt: number): NumberMap
@@ -534,12 +526,7 @@ function FluxaController.Step(self: ControllerInstance, dt: number): PoseData
 	for _, layerName in ipairs(self._layerNames) do
 		local layer = self._layers[layerName]
 		if layer and layer.Weight > 0 then
-			local layerPose = buildLayerPose(self, layerName, dt)
-			if layer.BlendMode == "Additive" then
-				blendPoseAdditive(finalPose, layerPose, layer.Weight, layer.Mask)
-			else
-				blendPoseOverride(finalPose, layerPose, layer.Weight, layer.Mask)
-			end
+			blendLayerTracksIntoPose(self, finalPose, layerName, layer, dt)
 		end
 	end
 

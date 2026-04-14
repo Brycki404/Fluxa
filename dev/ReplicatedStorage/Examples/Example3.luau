@@ -151,6 +151,12 @@ local function createInputDriver(controller, state)
 			controller:Set("ShiftHeld", true)
 		end
 	end)
+	connect(UserInputService.InputEnded, function(input: InputObject, _: boolean)
+		if input.KeyCode == SHIFT_KEY then
+			state.ShiftHeld = false
+			controller:Set("ShiftHeld", false)
+		end
+	end)
 end
 
 local function createHumanoidStateDriver(controller, humanoid, state)
