@@ -30,10 +30,10 @@ function AnimationPlayer.new(asset: any, options: AnimationPlayerOptions?): Anim
 
 	self.Asset = asset
 	self.Time = 0
-	self.Speed = options and options.Speed or 1
-	self.Loop = options and options.Loop or true
-	self.FadeInTime = options and options.FadeInTime or 0.2
-	self.FadeOutTime = options and options.FadeOutTime or 0.2
+	self.Speed = if options and options.Speed ~= nil then options.Speed else 1
+	self.Loop = if options and options.Loop ~= nil then options.Loop else true
+	self.FadeInTime = if options and options.FadeInTime ~= nil then options.FadeInTime else 0.2
+	self.FadeOutTime = if options and options.FadeOutTime ~= nil then options.FadeOutTime else 0.2
 	self.Weight = 0
 	self.Playing = false
 	self._FadeDir = 0
@@ -86,6 +86,9 @@ function AnimationPlayer.Update(self: AnimationPlayerInstance, dt: number)
 	end
 
 	if not self.Asset or not self.Asset.GetLength then
+		self.Playing = false
+		self._FadeDir = 0
+		self.Weight = 0
 		return { Transforms = {}, Curves = {} }
 	end
 
@@ -100,9 +103,9 @@ function AnimationPlayer.Update(self: AnimationPlayerInstance, dt: number)
 		self.Time = self.Time % duration
 	elseif self.Time >= duration then
 		self.Time = duration
-		-- Fade out on natural completion instead of instant stop
+		-- Explicitly stop one-shots once they complete.
 		if self._FadeDir ~= -1 then
-			self._FadeDir = -1
+			self:Stop()
 		end
 	end
 
