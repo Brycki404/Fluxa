@@ -13,7 +13,7 @@ local temp = ConnectionRegistry.new()
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local AnimationAsset = require(ReplicatedStorage.Packages.fluxa.AnimationAsset)
-local AnimationPlayer = require(ReplicatedStorage.Packages.fluxa.AnimationPlayer)
+local AnimationTrack = require(ReplicatedStorage.Packages.fluxa.AnimationTrack)
 local Pose = require(ReplicatedStorage.Packages.fluxa.Pose)
 local UniversalJointWriter = require(ReplicatedStorage.Packages.fluxa.UniversalJointWriter)
 
@@ -115,22 +115,22 @@ function module:Start(clientScript: LocalScript)
         end
     end
 
-    local animPlayers = {
-        Idle     = AnimationPlayer.new(animAssets.Idle     or {}, { Speed = 1, Loop = true,  FadeInTime = 0.18, FadeOutTime = 0.22 });
-        SlowWalk = AnimationPlayer.new(animAssets.SlowWalk or {}, { Speed = 1, Loop = true,  FadeInTime = 0.20, FadeOutTime = 0.24 });
-        Walk     = AnimationPlayer.new(animAssets.Walk     or {}, { Speed = 1, Loop = true,  FadeInTime = 0.20, FadeOutTime = 0.24 });
-        Run      = AnimationPlayer.new(animAssets.Run      or {}, { Speed = 1, Loop = true,  FadeInTime = 0.18, FadeOutTime = 0.22 });
-        Jump     = AnimationPlayer.new(animAssets.Jump     or {}, { Speed = 1, Loop = false, FadeInTime = 0.08, FadeOutTime = 0.16 });
-        Fall     = AnimationPlayer.new(animAssets.Fall     or {}, { Speed = 1, Loop = true,  FadeInTime = 0.14, FadeOutTime = 0.18 });
-        Land     = AnimationPlayer.new(animAssets.Land     or {}, { Speed = 1, Loop = false, FadeInTime = 0.08, FadeOutTime = 0.16 });
-        Climb    = AnimationPlayer.new(animAssets.Climb    or {}, { Speed = 1, Loop = true,  FadeInTime = 0.18, FadeOutTime = 0.22 });
+    local animTracks = {
+        Idle     = AnimationTrack.new(animAssets.Idle     or {}, { Speed = 1, Loop = true,  FadeInTime = 0.18, FadeOutTime = 0.22 });
+        SlowWalk = AnimationTrack.new(animAssets.SlowWalk or {}, { Speed = 1, Loop = true,  FadeInTime = 0.20, FadeOutTime = 0.24 });
+        Walk     = AnimationTrack.new(animAssets.Walk     or {}, { Speed = 1, Loop = true,  FadeInTime = 0.20, FadeOutTime = 0.24 });
+        Run      = AnimationTrack.new(animAssets.Run      or {}, { Speed = 1, Loop = true,  FadeInTime = 0.18, FadeOutTime = 0.22 });
+        Jump     = AnimationTrack.new(animAssets.Jump     or {}, { Speed = 1, Loop = false, FadeInTime = 0.08, FadeOutTime = 0.16 });
+        Fall     = AnimationTrack.new(animAssets.Fall     or {}, { Speed = 1, Loop = true,  FadeInTime = 0.14, FadeOutTime = 0.18 });
+        Land     = AnimationTrack.new(animAssets.Land     or {}, { Speed = 1, Loop = false, FadeInTime = 0.08, FadeOutTime = 0.16 });
+        Climb    = AnimationTrack.new(animAssets.Climb    or {}, { Speed = 1, Loop = true,  FadeInTime = 0.18, FadeOutTime = 0.22 });
     }
 
     local jointMap, retarget = UniversalJointWriter.BuildJointMap(character)
     local didPrintRigDebug = false
     local didPrintSampleDebug = false
 
-    animPlayers.Idle:Play()
+    animTracks.Idle:Play()
 
     -- ── State ──────────────────────────────────────────────────────────────
     -- momentum: 0 = walking, 1 = full sprint
@@ -153,7 +153,7 @@ function module:Start(clientScript: LocalScript)
     local function syncLocomotionPhase(phase: number)
         local locomotionNames = { "SlowWalk", "Walk", "Run" }
         for _, name in ipairs(locomotionNames) do
-            local aplr = animPlayers[name]
+            local aplr = animTracks[name]
             local asset = aplr and aplr.Asset
             if aplr and asset and asset.GetLength then
                 local duration = asset:GetLength()
@@ -186,28 +186,28 @@ function module:Start(clientScript: LocalScript)
             wasAirborne = true
             airState = "Jump"
             print("JUMP")
-            animPlayers.Jump:Play()
+            animTracks.Jump:Play()
 
         elseif new == Enum.HumanoidStateType.Freefall then
             wasAirborne = true
             airState = "Fall"
-            if not animPlayers.Fall.Playing then
+            if not animTracks.Fall.Playing then
                 print("FALL")
-                animPlayers.Fall:Play()
+                animTracks.Fall:Play()
             end
 
         elseif new == Enum.HumanoidStateType.Climbing then
             airState = "Climb"
             wasAirborne = false
-            if not animPlayers.Climb.Playing then
-                animPlayers.Climb:Play()
+            if not animTracks.Climb.Playing then
+                animTracks.Climb:Play()
             end
         elseif new == Enum.HumanoidStateType.Landed
             or new == Enum.HumanoidStateType.Running
             or new == Enum.HumanoidStateType.RunningNoPhysics then
 
             local canTriggerLand = wasAirborne
-                and not animPlayers.Land.Playing
+                and not animTracks.Land.Playing
                 and (now - lastLandTriggerTime) >= LAND_RETRIGGER_COOLDOWN
 
             if canTriggerLand then
@@ -217,7 +217,7 @@ function module:Start(clientScript: LocalScript)
                 lastLandTriggerTime = now
                 landBlendTime = 0
                 print("LAND")
-                animPlayers.Land:Play()
+                animTracks.Land:Play()
             elseif airState ~= "Land" then
                 airState = "Ground"
                 wasAirborne = false
@@ -289,10 +289,10 @@ function module:Start(clientScript: LocalScript)
         syncLocomotionPhase(locomotionPhase)
 
         -- Speeds are externally phase-driven for synced locomotion players.
-        animPlayers.SlowWalk.Speed = 0
-        animPlayers.Walk.Speed = 0
-        animPlayers.Run.Speed = 0
-        animPlayers.Climb.Speed = math.clamp(smoothedPlanarSpeed / BASE_WALK_SPEED, 0.8, 1.8)
+        animTracks.SlowWalk.Speed = 0
+        animTracks.Walk.Speed = 0
+        animTracks.Run.Speed = 0
+        animTracks.Climb.Speed = math.clamp(smoothedPlanarSpeed / BASE_WALK_SPEED, 0.8, 1.8)
 
         if airState == "Land" then
             landBlendTime += deltaTime
@@ -301,7 +301,7 @@ function module:Start(clientScript: LocalScript)
         end
 
         -- Land is a short overlay; hand off quickly to locomotion.
-        if airState == "Land" and (not animPlayers.Land.Playing or landBlendTime >= LAND_BLEND_DURATION) then
+        if airState == "Land" and (not animTracks.Land.Playing or landBlendTime >= LAND_BLEND_DURATION) then
             airState = "Ground"
         end
 
@@ -312,13 +312,13 @@ function module:Start(clientScript: LocalScript)
         }
 
         if airState == "Jump" then
-            if animPlayers.Jump.Playing then
+            if animTracks.Jump.Playing then
                 blendWeights.Jump = 1
             else
                 -- jump anim ended before Freefall fired; fall back to Fall
                 blendWeights.Fall = 1
-                if not animPlayers.Fall.Playing then
-                    animPlayers.Fall:Play()
+                if not animTracks.Fall.Playing then
+                    animTracks.Fall:Play()
                 end
             end
 
@@ -376,7 +376,7 @@ function module:Start(clientScript: LocalScript)
         -- One-shots (Jump, Land) are triggered only by StateChanged, never here
         local loopingNames = { "Idle", "SlowWalk", "Walk", "Run", "Fall", "Climb" }
         for _: number, name: string in ipairs(loopingNames) do
-            local aplr = animPlayers[name]
+            local aplr = animTracks[name]
             local w: number = smoothedWeights[name] or 0
             if w == 0 then
                 if aplr and aplr.Playing then
@@ -392,7 +392,7 @@ function module:Start(clientScript: LocalScript)
         local hasBase: { [string]: boolean } = {}
         local sampledTransforms: {[string]: boolean} = {}
 
-        for name: string, aplr in pairs(animPlayers) do
+        for name: string, aplr in pairs(animTracks) do
             if aplr.Playing then
                 local logicalW: number = smoothedWeights[name] or 0
                 local effectiveW: number = if logicalW > 0 then aplr.Weight * logicalW else aplr.Weight

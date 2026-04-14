@@ -88,7 +88,7 @@ local function registerAliases(retarget: RetargetMap, canonicalName: string, ali
 end
 
 local function getCanonicalMotorName(root: Model, motor: Motor6D): string
-	-- KeyframeSequence pose tracks are authored against the effector part name,
+	-- KeyframeSequence pose channels are authored against the effector part name,
 	-- not the Motor6D instance name. Treat Part1 as the motor's canonical target.
 	if motor.Part1 then
 		return getRelativePath(root, motor.Part1)
@@ -120,7 +120,7 @@ end
 
 local function getCanonicalAnimConstraintName(root: Model, ac: AnimationConstraint): string
 	-- Attachment1 is the effector side; its parent part is the canonical target,
-	-- matching how KeyframeSequence tracks are named.
+	-- matching how KeyframeSequence channels are named.
 	if ac.Attachment1 and ac.Attachment1.Parent then
 		return getRelativePath(root, ac.Attachment1.Parent)
 	end

@@ -110,7 +110,7 @@ function module:Start(_clientScript: LocalScript)
 		Character = character,
 		AutoApplyPose = true,
 		AutoStart = true,
-		Params = {
+		Drivers = {
 			Speed = 0,
 			Direction = Vector3.zero,
 			Moving = false,
@@ -126,24 +126,24 @@ function module:Start(_clientScript: LocalScript)
 		Layer = "Base",
 		AutoManage = true,
 		InitialWeight = 1,
-		PlayerOptions = { Loop = true, Speed = 1, FadeInTime = 0.2, FadeOutTime = 0.2 },
+		TrackOptions = { Loop = true, Speed = 1, FadeInTime = 0.2, FadeOutTime = 0.2 },
 	})
 	_controller:AddTrack("Walk", assets.Walk or {}, {
 		Layer = "Base",
 		AutoManage = true,
-		PlayerOptions = { Loop = true, Speed = 1, FadeInTime = 0.2, FadeOutTime = 0.2 },
+		TrackOptions = { Loop = true, Speed = 1, FadeInTime = 0.2, FadeOutTime = 0.2 },
 	})
 	_controller:AddTrack("Run", assets.Run or {}, {
 		Layer = "Base",
 		AutoManage = true,
-		PlayerOptions = { Loop = true, Speed = 1, FadeInTime = 0.18, FadeOutTime = 0.2 },
+		TrackOptions = { Loop = true, Speed = 1, FadeInTime = 0.18, FadeOutTime = 0.2 },
 	})
 	_controller:AddTrack("Attack", assets.Attack or assets.Jump or {}, {
 		Layer = "UpperBody",
 		AutoManage = false,
 		IsOneShot = true,
 		InitialWeight = 0,
-		PlayerOptions = { Loop = false, Speed = 1, FadeInTime = 0.08, FadeOutTime = 0.14 },
+		TrackOptions = { Loop = false, Speed = 1, FadeInTime = 0.08, FadeOutTime = 0.14 },
 	})
 
 	_controller:CreateBlendTree("Locomotion", function(controller, _dt)

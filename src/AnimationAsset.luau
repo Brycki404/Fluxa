@@ -9,7 +9,7 @@ export type AnimationKeyframe = {
 	Value: CFrame;
 }
 
-export type AnimationTrack = {
+export type AnimationChannel = {
 	Name: string;
 	Keyframes: { AnimationKeyframe };
 }
@@ -27,7 +27,7 @@ export type AnimationSample = {
 export type AnimationAssetInstance = {
 	Name: string;
 	Duration: number;
-	Tracks: { [string]: {AnimationKeyframe} };
+	Channels: { [string]: {AnimationKeyframe} };
 	Events: { AnimationEvent };
 
 	Sample: (self: AnimationAssetInstance, time: number) -> AnimationSample;
@@ -87,12 +87,12 @@ end
 local function collectPosesRecursive(
 	pose: Pose,
 	time: number,
-	tracks: { [string]: { AnimationKeyframe } }
+	channels: { [string]: { AnimationKeyframe } }
 )
 	local jointName = pose.Name
 	if jointName and pose.CFrame then
-		tracks[jointName] = tracks[jointName] or {}
-		table.insert(tracks[jointName], {
+		channels[jointName] = channels[jointName] or {}
+		table.insert(channels[jointName], {
 			Name = pose.Name;
 			Time = time;
 			Value = pose.CFrame;
@@ -101,13 +101,13 @@ local function collectPosesRecursive(
 
 	for _, subPose: Instance in ipairs(safeGetSubPoses(pose)) do
 		if subPose:IsA("Pose") then
-			collectPosesRecursive(subPose, time, tracks)
+			collectPosesRecursive(subPose, time, channels)
 		end
 	end
 end
 
 local function parseKeyframeSequence(sequence: KeyframeSequence)
-	local tracks: { [string]: { AnimationKeyframe } } = {}
+	local channels: { [string]: { AnimationKeyframe } } = {}
 
 	for _, keyframe: Instance in ipairs(sequence:GetKeyframes()) do
 		if not keyframe:IsA("Keyframe") then
@@ -117,26 +117,26 @@ local function parseKeyframeSequence(sequence: KeyframeSequence)
 
 		for _, pose: Instance in ipairs(safeGetRootPoses(keyframe)) do
 			if pose:IsA("Pose") then
-				collectPosesRecursive(pose, time, tracks)
+				collectPosesRecursive(pose, time, channels)
 			end
 		end
 	end
 
-	-- Sort each track by time
-	for _, keyframes in pairs(tracks) do
+	-- Sort each channel by time
+	for _, keyframes in pairs(channels) do
 		table.sort(keyframes, function(a, b)
 			return a.Time < b.Time
 		end)
 	end
 
-	return tracks
+	return channels
 end
 
 ---------------------------------------------------------------------
 -- SAMPLING
 ---------------------------------------------------------------------
 
-local function sampleTrack(keyframes: { AnimationKeyframe }, time: number): CFrame
+local function sampleChannel(keyframes: { AnimationKeyframe }, time: number): CFrame
 	local count = #keyframes
 	if count == 0 then
 		return CFrame.new()
@@ -203,7 +203,7 @@ function AnimationAsset.new(sequence: KeyframeSequence, nameOverride: string?): 
 	local self = {}  :: AnimationAssetInstance
 
 	self.Name = nameOverride or sequence.Name
-	self.Tracks = parseKeyframeSequence(sequence)
+	self.Channels = parseKeyframeSequence(sequence)
 	self.Events = extractEvents(sequence)
 
 	-- Duration = last keyframe time
@@ -254,8 +254,8 @@ function AnimationAsset.Sample(self: AnimationAssetInstance, time: number): Anim
 	local t = math.clamp(time, 0, self.Duration)
 	local transforms: { [string]: CFrame } = {}
 
-	for joint, track in pairs(self.Tracks) do
-		transforms[joint] = sampleTrack(track, t)
+	for joint, channel in pairs(self.Channels) do
+		transforms[joint] = sampleChannel(channel, t)
 	end
 
 	return {

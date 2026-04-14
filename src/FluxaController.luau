@@ -1,9 +1,9 @@
 --!strict
--- FluxaController: configurable animation-graph owner for tracks, layers, blend trees, and parameters.
+-- FluxaController: configurable animation graph owner for tracks, drivers, blend trees, and layers.
 
 local RunService = game:GetService("RunService")
 
-local AnimationPlayer = require(script.Parent.AnimationPlayer)
+local AnimationTrack = require(script.Parent.AnimationTrack)
 local UniversalJointWriter = require(script.Parent.UniversalJointWriter)
 
 local FluxaController = {}
@@ -12,18 +12,23 @@ FluxaController.__index = FluxaController
 type NumberMap = {[string]: number}
 type AnyMap = {[string]: any}
 type JointMask = {[string]: boolean}
+type JointMaskList = {string}
+type JointMaskInput = JointMask | JointMaskList
 type PoseData = {[string]: CFrame}
+type LayerBlendMode = "Override" | "Additive"
 
 export type BlendTreeResolver = (self: ControllerInstance, dt: number) -> NumberMap?
 
 export type LayerConfig = {
 	Weight: number?,
-	Mask: JointMask?,
+	BlendMode: LayerBlendMode?,
+	Mask: JointMaskInput?,
 	Order: number?,
 }
 
 export type TrackConfig = {
 	Asset: any,
+	TrackOptions: {[string]: any}?,
 	PlayerOptions: {[string]: any}?,
 	Layer: string?,
 	AutoManage: boolean?,
@@ -36,6 +41,7 @@ export type NewOptions = {
 	AutoApplyPose: boolean?,
 	AutoStart: boolean?,
 	WeightSmoothingSpeed: number?,
+	Drivers: AnyMap?,
 	Params: AnyMap?,
 	Layers: {[string]: LayerConfig}?,
 	Tracks: {[string]: TrackConfig}?,
@@ -47,6 +53,7 @@ export type NewOptions = {
 
 type LayerState = {
 	Weight: number,
+	BlendMode: LayerBlendMode,
 	Mask: JointMask?,
 	Order: number,
 }
@@ -54,7 +61,7 @@ type LayerState = {
 type TrackState = {
 	Name: string,
 	Layer: string,
-	Player: any,
+	Track: any,
 	AutoManage: boolean,
 	IsOneShot: boolean,
 }
@@ -70,7 +77,8 @@ export type ControllerInstance = {
 	AddLayer: (self: ControllerInstance, name: string, config: LayerConfig?) -> (),
 	RemoveLayer: (self: ControllerInstance, name: string) -> (),
 	SetLayerWeight: (self: ControllerInstance, name: string, weight: number) -> (),
-	SetLayerMask: (self: ControllerInstance, name: string, mask: JointMask?) -> (),
+	SetLayerBlendMode: (self: ControllerInstance, name: string, blendMode: LayerBlendMode) -> (),
+	SetLayerMask: (self: ControllerInstance, name: string, mask: JointMaskInput?) -> (),
 
 	AddTrack: (self: ControllerInstance, name: string, asset: any, config: TrackConfig?) -> any,
 	RemoveTrack: (self: ControllerInstance, name: string) -> (),
@@ -84,6 +92,8 @@ export type ControllerInstance = {
 	Set: (self: ControllerInstance, key: string, value: any) -> (),
 	Get: (self: ControllerInstance, key: string) -> any,
 	SetBlend: (self: ControllerInstance, key: string, value: any) -> (),
+	SetDriver: (self: ControllerInstance, key: string, value: any) -> (),
+	GetDriver: (self: ControllerInstance, key: string) -> any,
 
 	Play: (self: ControllerInstance, trackName: string, fadeInTime: number?) -> (),
 	StopTrack: (self: ControllerInstance, trackName: string, fadeOutTime: number?) -> (),
@@ -101,7 +111,7 @@ export type ControllerInstance = {
 	_trackTargets: NumberMap,
 	_smoothedTrackWeights: NumberMap,
 	_blendTrees: {[string]: BlendTreeResolver},
-	_params: AnyMap,
+	_drivers: AnyMap,
 	_jointMap: {[string]: any},
 	_retarget: {[string]: string},
 	_updateConnection: RBXScriptConnection?,
@@ -140,7 +150,33 @@ local function removeKey(arr: {string}, key: string)
 	end
 end
 
-local function blendPoseInto(target: PoseData, incoming: PoseData, weight: number, mask: JointMask?)
+local function normalizeMask(mask: JointMaskInput?): JointMask?
+	if mask == nil then
+		return nil
+	end
+
+	local map: JointMask = {}
+	for key, value in pairs(mask :: any) do
+		if type(key) == "number" then
+			if type(value) == "string" then
+				map[value] = true
+			end
+		elseif type(key) == "string" and type(value) == "boolean" and value then
+			map[key] = true
+		end
+	end
+
+	return map
+end
+
+local function normalizeBlendMode(mode: LayerBlendMode?): LayerBlendMode
+	if mode == "Additive" then
+		return "Additive"
+	end
+	return "Override"
+end
+
+local function blendPoseOverride(target: PoseData, incoming: PoseData, weight: number, mask: JointMask?)
 	if weight <= 0 then
 		return
 	end
@@ -159,6 +195,27 @@ local function blendPoseInto(target: PoseData, incoming: PoseData, weight: numbe
 	end
 end
 
+local function blendPoseAdditive(target: PoseData, incoming: PoseData, weight: number, mask: JointMask?)
+	if weight <= 0 then
+		return
+	end
+
+	local alpha = clamp01(weight)
+	for joint, cf in pairs(incoming) do
+		if mask ~= nil and not mask[joint] then
+			continue
+		end
+
+		local delta = CFrame.new():Lerp(cf, alpha)
+		local existing = (target :: any)[joint]
+		if existing then
+			target[joint] = existing * delta
+		else
+			target[joint] = delta
+		end
+	end
+end
+
 local function buildLayerPose(controller: ControllerInstance, layerName: string, dt: number): PoseData
 	local layerPose: PoseData = {}
 	local hasBase: {[string]: boolean} = {}
@@ -169,13 +226,13 @@ local function buildLayerPose(controller: ControllerInstance, layerName: string,
 			continue
 		end
 
-		if not track.Player.Playing then
+		if not track.Track.Playing then
 			continue
 		end
 
 		local logicalWeight = controller._smoothedTrackWeights[trackName] or 0
-		local effectiveWeight = if logicalWeight > 0 then logicalWeight * track.Player.Weight else track.Player.Weight
-		local sample = track.Player:Update(dt)
+		local effectiveWeight = if logicalWeight > 0 then logicalWeight * track.Track.Weight else track.Track.Weight
+		local sample = track.Track:Update(dt)
 
 		if effectiveWeight <= 0 then
 			continue
@@ -236,11 +293,11 @@ function FluxaController.new(options: NewOptions): ControllerInstance
 	self._trackTargets = {}
 	self._smoothedTrackWeights = {}
 	self._blendTrees = {}
-	self._params = table.clone(options.Params or {})
+	self._drivers = table.clone(options.Drivers or options.Params or {})
 	self._jointMap, self._retarget = UniversalJointWriter.BuildJointMap(self.Character)
 	self._updateConnection = nil
 
-	self:AddLayer("Base", { Weight = 1, Order = 0 })
+	self:AddLayer("Base", { Weight = 1, BlendMode = "Override", Order = 0 })
 
 	if options.Layers then
 		for layerName, layerConfig in pairs(options.Layers) do
@@ -269,9 +326,10 @@ end
 
 function FluxaController.AddLayer(self: ControllerInstance, name: string, config: LayerConfig?)
 	local existing = self._layers[name]
-	local nextLayer = {
+	local nextLayer: LayerState = {
 		Weight = if config and config.Weight ~= nil then clamp01(config.Weight) else if existing then existing.Weight else 1,
-		Mask = if config then config.Mask else if existing then existing.Mask else nil,
+		BlendMode = normalizeBlendMode(if config and config.BlendMode ~= nil then config.BlendMode else if existing then existing.BlendMode else "Override"),
+		Mask = normalizeMask(if config then config.Mask else if existing then existing.Mask else nil),
 		Order = if config and config.Order ~= nil then config.Order else if existing then existing.Order else (#self._layerNames + 1),
 	}
 
@@ -305,19 +363,27 @@ function FluxaController.SetLayerWeight(self: ControllerInstance, name: string, 
 	layer.Weight = clamp01(weight)
 end
 
-function FluxaController.SetLayerMask(self: ControllerInstance, name: string, mask: JointMask?)
+function FluxaController.SetLayerBlendMode(self: ControllerInstance, name: string, blendMode: LayerBlendMode)
 	local layer = self._layers[name]
 	if not layer then
 		return
 	end
-	layer.Mask = mask
+	layer.BlendMode = blendMode
+end
+
+function FluxaController.SetLayerMask(self: ControllerInstance, name: string, mask: JointMaskInput?)
+	local layer = self._layers[name]
+	if not layer then
+		return
+	end
+	layer.Mask = normalizeMask(mask)
 end
 
 function FluxaController.AddTrack(self: ControllerInstance, name: string, asset: any, config: TrackConfig?)
 	assert(asset ~= nil, "FluxaController:AddTrack requires animation asset")
 
-	local playerOptions = if config and config.PlayerOptions then config.PlayerOptions else nil
-	local player = AnimationPlayer.new(asset, playerOptions)
+	local trackOptions = if config and config.TrackOptions then config.TrackOptions else if config and config.PlayerOptions then config.PlayerOptions else nil
+	local track = AnimationTrack.new(asset, trackOptions)
 
 	local layerName = if config and config.Layer then config.Layer else "Base"
 	if self._layers[layerName] == nil then
@@ -327,7 +393,7 @@ function FluxaController.AddTrack(self: ControllerInstance, name: string, asset:
 	self._tracks[name] = {
 		Name = name,
 		Layer = layerName,
-		Player = player,
+		Track = track,
 		AutoManage = if config and config.AutoManage ~= nil then config.AutoManage else true,
 		IsOneShot = if config and config.IsOneShot ~= nil then config.IsOneShot else false,
 	}
@@ -341,16 +407,16 @@ function FluxaController.AddTrack(self: ControllerInstance, name: string, asset:
 	self._smoothedTrackWeights[name] = clamp01(initialWeight)
 
 	if self._tracks[name].AutoManage and self._trackTargets[name] > 0 and not self._tracks[name].IsOneShot then
-		player:Play(player.FadeInTime)
+		track:Play(track.FadeInTime)
 	end
 
-	return player
+	return track
 end
 
 function FluxaController.RemoveTrack(self: ControllerInstance, name: string)
 	local track = self._tracks[name]
-	if track and track.Player.Playing then
-		track.Player:Stop(0)
+	if track and track.Track.Playing then
+		track.Track:Stop(0)
 	end
 
 	self._tracks[name] = nil
@@ -390,15 +456,23 @@ function FluxaController.RemoveBlendTree(self: ControllerInstance, name: string)
 end
 
 function FluxaController.Set(self: ControllerInstance, key: string, value: any)
-	self._params[key] = value
+	self._drivers[key] = value
 end
 
 function FluxaController.Get(self: ControllerInstance, key: string)
-	return self._params[key]
+	return self._drivers[key]
 end
 
 function FluxaController.SetBlend(self: ControllerInstance, key: string, value: any)
 	self:Set(key, value)
+end
+
+function FluxaController.SetDriver(self: ControllerInstance, key: string, value: any)
+	self:Set(key, value)
+end
+
+function FluxaController.GetDriver(self: ControllerInstance, key: string)
+	return self:Get(key)
 end
 
 function FluxaController.Play(self: ControllerInstance, trackName: string, fadeInTime: number?)
@@ -408,7 +482,7 @@ function FluxaController.Play(self: ControllerInstance, trackName: string, fadeI
 	end
 
 	self._trackTargets[trackName] = 1
-	track.Player:Play(fadeInTime)
+	track.Track:Play(fadeInTime)
 end
 
 function FluxaController.StopTrack(self: ControllerInstance, trackName: string, fadeOutTime: number?)
@@ -418,7 +492,7 @@ function FluxaController.StopTrack(self: ControllerInstance, trackName: string, 
 	end
 
 	self._trackTargets[trackName] = 0
-	track.Player:Stop(fadeOutTime)
+	track.Track:Stop(fadeOutTime)
 end
 
 function FluxaController.Stop(self: ControllerInstance, trackName: string?, fadeOutTime: number?)
@@ -447,11 +521,11 @@ function FluxaController.Step(self: ControllerInstance, dt: number): PoseData
 
 		if track.AutoManage and not track.IsOneShot then
 			if target <= 0 then
-				if track.Player.Playing then
-					track.Player:Stop(track.Player.FadeOutTime)
+				if track.Track.Playing then
+					track.Track:Stop(track.Track.FadeOutTime)
 				end
-			elseif not track.Player.Playing then
-				track.Player:Play(track.Player.FadeInTime)
+			elseif not track.Track.Playing then
+				track.Track:Play(track.Track.FadeInTime)
 			end
 		end
 	end
@@ -461,7 +535,11 @@ function FluxaController.Step(self: ControllerInstance, dt: number): PoseData
 		local layer = self._layers[layerName]
 		if layer and layer.Weight > 0 then
 			local layerPose = buildLayerPose(self, layerName, dt)
-			blendPoseInto(finalPose, layerPose, layer.Weight, layer.Mask)
+			if layer.BlendMode == "Additive" then
+				blendPoseAdditive(finalPose, layerPose, layer.Weight, layer.Mask)
+			else
+				blendPoseOverride(finalPose, layerPose, layer.Weight, layer.Mask)
+			end
 		end
 	end
 
@@ -504,8 +582,8 @@ function FluxaController.Destroy(self: ControllerInstance)
 	self:StopLoop()
 
 	for _, track in pairs(self._tracks) do
-		if track.Player.Playing then
-			track.Player:Stop(0)
+		if track.Track.Playing then
+			track.Track:Stop(0)
 		end
 	end
 
@@ -516,7 +594,7 @@ function FluxaController.Destroy(self: ControllerInstance)
 	table.clear(self._trackTargets)
 	table.clear(self._smoothedTrackWeights)
 	table.clear(self._blendTrees)
-	table.clear(self._params)
+	table.clear(self._drivers)
 end
 
 return FluxaController

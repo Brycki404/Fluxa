@@ -27,8 +27,16 @@ For more help, check out [the Rojo documentation](https://rojo.space/docs).
 Public documentation for Fluxa is available on my [Gitbook.io site](https://brycki404.gitbook.io/fluxa/)
 
 ## FluxaController (Controller Creator)
-Fluxa now ships with an optional `FluxaController` module that acts as a single animation brain.
-It is designed so you can build your own controller graph instead of exposing raw `AnimationPlayer` instances across many scripts.
+Fluxa ships with an optional `FluxaController` module that acts as a single animation brain.
+It is designed so you can build your own controller graph instead of exposing raw `Track` instances across many scripts.
+
+### Naming conventions
+- `AnimationAssets`: raw animation data.
+- `Tracks`: playable animation instances.
+- `Channels`: per-bone or per-property animation curves inside an `AnimationAsset`.
+- `BlendTrees`: graph nodes that blend multiple `Tracks`.
+- `Drivers`: variables that drive blend trees and parameters.
+- `Layers`: stacked animation outputs with weights, blend modes, and optional masks.
 
 ### Why use it
 - Prevent animation conflicts by centralizing play/stop/blend decisions.
@@ -41,7 +49,7 @@ local Fluxa = require(ReplicatedStorage.Packages.fluxa)
 local controller = Fluxa.FluxaController.new({
 	Character = character,
 	AutoStart = true,
-	Params = {
+	Drivers = {
 		Speed = 0,
 		Direction = Vector3.zero,
 	},
@@ -52,13 +60,23 @@ controller:Set("Speed", 10)
 controller:Set("Direction", Vector3.new(1, 0, 0))
 ```
 
+### Layers (simple + optional)
+- Layers are optional; controller defaults to a single `Base` layer.
+- Every layer has a `Weight` from `0` to `1`.
+- `BlendMode` is either `Override` or `Additive`.
+- `Mask` is optional and can be either:
+  - a dictionary map: `{ UpperTorso = true, Head = true }`
+  - a list of bone names: `{ "UpperTorso", "Head" }`
+
 ### Core methods
 - `AddLayer(name, config)`
 - `SetLayerWeight(name, weight)`
+- `SetLayerBlendMode(name, blendMode)`
 - `AddTrack(name, asset, config)`
 - `CreateBlendTree(name, resolver)`
 - `Play(trackName)` / `Stop(trackName?)`
 - `Set(key, value)` / `Get(key)`
+- `SetDriver(key, value)` / `GetDriver(key)`
 - `Start()` / `StopLoop()` / `Destroy()`
 
 ### Example setup in this repo

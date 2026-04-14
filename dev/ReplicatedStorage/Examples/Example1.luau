@@ -16,7 +16,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 -- local AnimationAsset = Fluxa.AnimationAsset
 -- but I prefer the method of just requiring modules manually for TypeScript-ability
 local AnimationAsset = require(ReplicatedStorage.Packages.fluxa.AnimationAsset)
-local AnimationPlayer = require(ReplicatedStorage.Packages.fluxa.AnimationPlayer)
+local AnimationTrack = require(ReplicatedStorage.Packages.fluxa.AnimationTrack)
 local Pose = require(ReplicatedStorage.Packages.fluxa.Pose)
 local UniversalJointWriter = require(ReplicatedStorage.Packages.fluxa.UniversalJointWriter)
 
@@ -118,20 +118,20 @@ function module:Start(clientScript: LocalScript)
         end
     end
 
-    -- Create animation players for each direction
-    local animPlayers = {
-        Idle = AnimationPlayer.new(animAssets.Idle or {}, { Speed = 1, Loop = true }),
-        Forward = AnimationPlayer.new(animAssets.WalkForward or {}, { Speed = 1, Loop = true }),
-        Right = AnimationPlayer.new(animAssets.WalkRight or {}, { Speed = 1, Loop = true }),
-        Backward = AnimationPlayer.new(animAssets.WalkBackward or {}, { Speed = 1, Loop = true }),
-        Left = AnimationPlayer.new(animAssets.WalkLeft or {}, { Speed = 1, Loop = true }),
+    -- Create animation tracks for each direction
+    local animTracks = {
+        Idle = AnimationTrack.new(animAssets.Idle or {}, { Speed = 1, Loop = true }),
+        Forward = AnimationTrack.new(animAssets.WalkForward or {}, { Speed = 1, Loop = true }),
+        Right = AnimationTrack.new(animAssets.WalkRight or {}, { Speed = 1, Loop = true }),
+        Backward = AnimationTrack.new(animAssets.WalkBackward or {}, { Speed = 1, Loop = true }),
+        Left = AnimationTrack.new(animAssets.WalkLeft or {}, { Speed = 1, Loop = true }),
     }
 
     local jointMap, retarget = UniversalJointWriter.BuildJointMap(character)
 
     -- Start with Idle
-    if animPlayers.Idle then
-        animPlayers.Idle:Play()
+    if animTracks.Idle then
+        animTracks.Idle:Play()
     end
 
     -- Update loop
@@ -193,11 +193,11 @@ function module:Start(clientScript: LocalScript)
         local directionNames = { "Idle", "Forward", "Right", "Backward", "Left" }
         for _i: number, directionName: string in ipairs(directionNames) do
             if blendWeights[directionName] == 0 then
-                if animPlayers[directionName] and animPlayers[directionName].Playing then
-                    animPlayers[directionName]:Stop()
+                if animTracks[directionName] and animTracks[directionName].Playing then
+                    animTracks[directionName]:Stop()
                 end
-            elseif animPlayers[directionName] and not animPlayers[directionName].Playing then
-                animPlayers[directionName]:Play()
+            elseif animTracks[directionName] and not animTracks[directionName].Playing then
+                animTracks[directionName]:Play()
             end
         end
 
@@ -206,7 +206,7 @@ function module:Start(clientScript: LocalScript)
 
         for directionName, weight in pairs(blendWeights) do
             if weight > 0 then
-                local aplr = animPlayers[directionName]
+                local aplr = animTracks[directionName]
                 if aplr and aplr.Playing then
                     local sample = aplr:Update(deltaTime)
 

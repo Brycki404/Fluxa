@@ -1,7 +1,7 @@
 local Fluxa = {}
 
 Fluxa.AnimationAsset = require(script.AnimationAsset)
-Fluxa.AnimationPlayer = require(script.AnimationPlayer)
+Fluxa.AnimationTrack = require(script.AnimationTrack)
 Fluxa.BlendTree = require(script.BlendTree)
 Fluxa.Pose = require(script.Pose)
 Fluxa.Retargeting = require(script.Retargeting)

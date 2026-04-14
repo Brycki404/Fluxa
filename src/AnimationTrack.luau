@@ -1,16 +1,16 @@
 --!strict
--- AnimationPlayer: play AnimationAsset instances with speed, looping, fade, and events.
+-- AnimationTrack: play AnimationAsset instances with speed, looping, fade, and events.
 
-local AnimationPlayer = {}
+local AnimationTrack = {}
 
-export type AnimationPlayerOptions = {
+export type AnimationTrackOptions = {
 	Speed: number?,
 	Loop: boolean?,
 	FadeInTime: number?,
 	FadeOutTime: number?,
 }
 
-export type AnimationPlayerInstance = {
+export type AnimationTrackInstance = {
 	Asset: any,
 	Time: number,
 	Speed: number,
@@ -22,13 +22,13 @@ export type AnimationPlayerInstance = {
 	_FadeDir: number,
 	_ActiveFadeInTime: number,
 	_ActiveFadeOutTime: number,
-	Play: (self: AnimationPlayerInstance, fadeInTime: number?) -> nil,
-	Stop: (self: AnimationPlayerInstance, fadeOutTime: number?) -> nil,
-	Update: (self: AnimationPlayerInstance, dt: number) -> any,
+	Play: (self: AnimationTrackInstance, fadeInTime: number?) -> nil,
+	Stop: (self: AnimationTrackInstance, fadeOutTime: number?) -> nil,
+	Update: (self: AnimationTrackInstance, dt: number) -> any,
 }
 
-function AnimationPlayer.new(asset: any, options: AnimationPlayerOptions?): AnimationPlayerInstance
-	local self = {} :: AnimationPlayerInstance
+function AnimationTrack.new(asset: any, options: AnimationTrackOptions?): AnimationTrackInstance
+	local self = {} :: AnimationTrackInstance
 
 	self.Asset = asset
 	self.Time = 0
@@ -42,14 +42,14 @@ function AnimationPlayer.new(asset: any, options: AnimationPlayerOptions?): Anim
 	self._ActiveFadeInTime = self.FadeInTime
 	self._ActiveFadeOutTime = self.FadeOutTime
 
-	self.Play = AnimationPlayer.Play
-	self.Stop = AnimationPlayer.Stop
-	self.Update = AnimationPlayer.Update
+	self.Play = AnimationTrack.Play
+	self.Stop = AnimationTrack.Stop
+	self.Update = AnimationTrack.Update
 
 	return self
 end
 
-function AnimationPlayer.Play(self: AnimationPlayerInstance, fadeInTime: number?)
+function AnimationTrack.Play(self: AnimationTrackInstance, fadeInTime: number?)
 	local resolvedFadeIn = if fadeInTime ~= nil then fadeInTime else self.FadeInTime
 	self._ActiveFadeInTime = resolvedFadeIn
 	self.Playing = true
@@ -63,7 +63,7 @@ function AnimationPlayer.Play(self: AnimationPlayerInstance, fadeInTime: number?
 	end
 end
 
-function AnimationPlayer.Stop(self: AnimationPlayerInstance, fadeOutTime: number?)
+function AnimationTrack.Stop(self: AnimationTrackInstance, fadeOutTime: number?)
 	local resolvedFadeOut = if fadeOutTime ~= nil then fadeOutTime else 0
 	self._ActiveFadeOutTime = resolvedFadeOut
 
@@ -76,7 +76,7 @@ function AnimationPlayer.Stop(self: AnimationPlayerInstance, fadeOutTime: number
 	end
 end
 
-function AnimationPlayer.Update(self: AnimationPlayerInstance, dt: number)
+function AnimationTrack.Update(self: AnimationTrackInstance, dt: number)
 	if not self.Playing then
 		return { Transforms = {}, Curves = {} }
 	end
@@ -129,4 +129,4 @@ function AnimationPlayer.Update(self: AnimationPlayerInstance, dt: number)
 	return sample
 end
 
-return AnimationPlayer
+return AnimationTrack
