@@ -23,7 +23,7 @@ local BASE_WALK_SPEED   = 10  -- speed when momentum = 0
 local MAX_RUN_SPEED     = 22  -- speed when momentum = 1
 
 -- How fast momentum builds / decays (0-1 per second)
-local MOMENTUM_BUILD_RATE  = 0.2   -- ~5 s to reach full run
+local MOMENTUM_BUILD_RATE  = 0.8   -- ~5 s to reach full run
 local MOMENTUM_DECAY_RATE  = 0.4   -- ~2.5 s to bleed back to walk
 
 local SHIFT_KEY = Enum.KeyCode.C
@@ -35,6 +35,11 @@ local TURN_LEAN_SMOOTH_SPEED = 10
 local MIN_LEAN_SCALE = 0.2 -- keep a little lean at low speed so turns still read
 local SPEED_SMOOTH_SPEED = 10
 local WEIGHT_SMOOTH_SPEED = 12
+local LAND_RETRIGGER_COOLDOWN = 0.12
+local LAND_BLEND_DURATION = 0.16
+local LAND_GROUND_START_ALPHA = 0.45
+local LOCOMOTION_MIN_CYCLE_RATE = 0.8
+local LOCOMOTION_MAX_CYCLE_RATE = 2.0
 
 local function getYaw(cf: CFrame): number
     local look = cf.LookVector
@@ -133,6 +138,9 @@ function module:Start(clientScript: LocalScript)
     local isShiftHeld: boolean = false
     -- "Ground" | "Jump" | "Fall" | "Land" | "Climb"
     local airState: string = "Ground"
+    local wasAirborne: boolean = false
+    local lastLandTriggerTime: number = -math.huge
+    local landBlendTime: number = 0
     local lastYaw: number = getYaw(root.CFrame)
     local turnLean: number = 0
     local smoothedPlanarSpeed: number = 0
@@ -140,6 +148,21 @@ function module:Start(clientScript: LocalScript)
         Idle = 0; SlowWalk = 0; Walk = 0; Run = 0;
         Jump = 0; Fall = 0; Land = 0; Climb = 0;
     }
+    local locomotionPhase: number = 0
+
+    local function syncLocomotionPhase(phase: number)
+        local locomotionNames = { "SlowWalk", "Walk", "Run" }
+        for _, name in ipairs(locomotionNames) do
+            local aplr = animPlayers[name]
+            local asset = aplr and aplr.Asset
+            if aplr and asset and asset.GetLength then
+                local duration = asset:GetLength()
+                if duration and duration > 0 then
+                    aplr.Time = phase * duration
+                end
+            end
+        end
+    end
 
     -- ── Input ──────────────────────────────────────────────────────────────
     temp:Register(UserInputService.InputBegan:Connect(function(input: InputObject, gameProcessed: boolean)
@@ -157,32 +180,47 @@ function module:Start(clientScript: LocalScript)
 
     -- ── Humanoid state → air state ─────────────────────────────────────────
     temp:Register(humanoid.StateChanged:Connect(function(_old: EnumItem, new: EnumItem)
+        local now = os.clock()
+
         if new == Enum.HumanoidStateType.Jumping then
+            wasAirborne = true
             airState = "Jump"
+            print("JUMP")
             animPlayers.Jump:Play()
 
         elseif new == Enum.HumanoidStateType.Freefall then
+            wasAirborne = true
             airState = "Fall"
             if not animPlayers.Fall.Playing then
+                print("FALL")
                 animPlayers.Fall:Play()
             end
 
         elseif new == Enum.HumanoidStateType.Climbing then
             airState = "Climb"
+            wasAirborne = false
             if not animPlayers.Climb.Playing then
                 animPlayers.Climb:Play()
             end
-
         elseif new == Enum.HumanoidStateType.Landed
             or new == Enum.HumanoidStateType.Running
             or new == Enum.HumanoidStateType.RunningNoPhysics then
 
-            if airState == "Fall" or airState == "Jump" then
+            local canTriggerLand = wasAirborne
+                and not animPlayers.Land.Playing
+                and (now - lastLandTriggerTime) >= LAND_RETRIGGER_COOLDOWN
+
+            if canTriggerLand then
                 -- trigger a one-shot land animation before returning to ground blend
                 airState = "Land"
+                wasAirborne = false
+                lastLandTriggerTime = now
+                landBlendTime = 0
+                print("LAND")
                 animPlayers.Land:Play()
-            elseif airState == "Climb" then
+            elseif airState ~= "Land" then
                 airState = "Ground"
+                wasAirborne = false
             end
         end
     end))
@@ -238,15 +276,32 @@ function module:Start(clientScript: LocalScript)
             humanoid.WalkSpeed = BASE_WALK_SPEED + (MAX_RUN_SPEED - BASE_WALK_SPEED) * momentum
         end
 
-        -- Match locomotion animation cadence to real horizontal velocity.
-        animPlayers.SlowWalk.Speed = math.clamp(smoothedPlanarSpeed / SLOW_WALK_SPEED, 0.8, 1.6)
-        animPlayers.Walk.Speed = math.clamp(smoothedPlanarSpeed / BASE_WALK_SPEED, 0.8, 1.8)
-        local runRefSpeed = BASE_WALK_SPEED + (MAX_RUN_SPEED - BASE_WALK_SPEED) * math.max(momentum, 0.35)
-        animPlayers.Run.Speed = math.clamp(smoothedPlanarSpeed / runRefSpeed, 0.85, 2.0)
+        -- Keep movement clips phase-locked so blends do not foot-slide/pop.
+        local locomotionCycleRate: number = 0
+        if isMoving then
+            locomotionCycleRate = math.clamp(
+                smoothedPlanarSpeed / BASE_WALK_SPEED,
+                LOCOMOTION_MIN_CYCLE_RATE,
+                LOCOMOTION_MAX_CYCLE_RATE
+            )
+        end
+        locomotionPhase = (locomotionPhase + deltaTime * locomotionCycleRate) % 1
+        syncLocomotionPhase(locomotionPhase)
+
+        -- Speeds are externally phase-driven for synced locomotion players.
+        animPlayers.SlowWalk.Speed = 0
+        animPlayers.Walk.Speed = 0
+        animPlayers.Run.Speed = 0
         animPlayers.Climb.Speed = math.clamp(smoothedPlanarSpeed / BASE_WALK_SPEED, 0.8, 1.8)
 
-        -- Land → Ground once the one-shot finishes
-        if airState == "Land" and not animPlayers.Land.Playing then
+        if airState == "Land" then
+            landBlendTime += deltaTime
+        else
+            landBlendTime = 0
+        end
+
+        -- Land is a short overlay; hand off quickly to locomotion.
+        if airState == "Land" and (not animPlayers.Land.Playing or landBlendTime >= LAND_BLEND_DURATION) then
             airState = "Ground"
         end
 
@@ -271,7 +326,24 @@ function module:Start(clientScript: LocalScript)
             blendWeights.Fall = 1
 
         elseif airState == "Land" then
-            blendWeights.Land = 1
+            local landProgress = math.clamp(landBlendTime / LAND_BLEND_DURATION, 0, 1)
+            local groundAlpha = math.clamp(
+                LAND_GROUND_START_ALPHA + (1 - LAND_GROUND_START_ALPHA) * landProgress,
+                0,
+                1
+            )
+            local landAlpha = 1 - groundAlpha
+            local moveMag: number = math.min(1, humanoid.MoveDirection.Magnitude)
+
+            blendWeights.Land = landAlpha
+            if isShiftHeld then
+                blendWeights.Idle     = (1 - moveMag) * groundAlpha
+                blendWeights.SlowWalk = moveMag * groundAlpha
+            else
+                blendWeights.Idle = (1 - moveMag) * groundAlpha
+                blendWeights.Walk = moveMag * (1 - momentum) * groundAlpha
+                blendWeights.Run  = moveMag * momentum * groundAlpha
+            end
 
         elseif airState == "Climb" then
             blendWeights.Climb = 1
@@ -308,7 +380,7 @@ function module:Start(clientScript: LocalScript)
             local w: number = smoothedWeights[name] or 0
             if w == 0 then
                 if aplr and aplr.Playing then
-                    aplr:Stop()
+                    aplr:Stop(aplr.FadeOutTime)
                 end
             elseif aplr and not aplr.Playing then
                 aplr:Play()
