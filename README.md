@@ -16,7 +16,7 @@ Additional examples will be created for every feature in future updates.
 ## Getting Started
 **For Rojo + Wally users**
 Add this to your wally.toml:
->`fluxa = "brycki404/fluxa@1.0.1"`
+>`fluxa = "brycki404/fluxa@1.1.0"`
 
 **For Studio users**
 Download the latest rbxl file from [Github Releases](https://github.com/Brycki404/Fluxa/releases)
