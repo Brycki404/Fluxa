@@ -240,7 +240,7 @@ local function buildLayerPose(controller: ControllerInstance, layerName: string,
 
 		for joint, cf in pairs(sample.Transforms) do
 			if not hasBase[joint] then
-				layerPose[joint] = cf
+				layerPose[joint] = CFrame.new():Lerp(cf, clamp01(effectiveWeight))
 				hasBase[joint] = true
 			else
 				layerPose[joint] = layerPose[joint]:Lerp(cf, clamp01(effectiveWeight))

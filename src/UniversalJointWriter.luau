@@ -181,9 +181,9 @@ function UniversalJointWriter.BuildJointMap(root: Model): (JointMap, RetargetMap
 		local cn = inst.ClassName
 		classCounts[cn] = (classCounts[cn] or 0) + 1
 	end
-	print("BuildJointMap: root =", root.Name, "| total descendants =", #descendants)
+	-- print("BuildJointMap: root =", root.Name, "| total descendants =", #descendants)
 	for cn, count in pairs(classCounts) do
-		print(string.format("  class %-30s x%d", cn, count))
+		-- print(string.format("  class %-30s x%d", cn, count))
 	end
 
 	for _, inst in ipairs(descendants) do
@@ -231,7 +231,7 @@ function UniversalJointWriter.BuildJointMap(root: Model): (JointMap, RetargetMap
 		end
 	end
 
-	print(jointMap, retarget)
+	-- print(jointMap, retarget)
 
 	return jointMap, retarget
 end

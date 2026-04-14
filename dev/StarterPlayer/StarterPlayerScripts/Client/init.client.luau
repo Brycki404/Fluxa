@@ -10,7 +10,7 @@ local Players = game:GetService("Players")
 local LocalPlayer = Players.LocalPlayer
 
 local EXAMPLE_ATTRIBUTE = "ex"
-local defaultExample: number = 2
+local defaultExample: number = 3
 local thisExample: number = defaultExample
 
 local function characterRemoving(_character: Model)
