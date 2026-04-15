@@ -14,7 +14,7 @@ local LocalPlayer = Players.LocalPlayer
 local Fluxa = require(ReplicatedStorage.Packages.fluxa)
 local AnimationAsset = Fluxa.AnimationAsset
 local FluxaController = Fluxa.FluxaController
-local FluxaReplicationService = Fluxa.Replication.FluxaReplicationService
+local FluxaReplicationService = Fluxa.FluxaReplicationService
 
 local SLOW_WALK_SPEED = 6
 local BASE_WALK_SPEED = 10
@@ -24,8 +24,9 @@ local MOMENTUM_DECAY_RATE = 0.4
 local SHIFT_KEY = Enum.KeyCode.C
 local SPEED_SMOOTH_SPEED = 10
 local LAND_RETRIGGER_COOLDOWN = 0.12
-local LAND_BLEND_DURATION = 0.16
-local LAND_GROUND_START_ALPHA = 0.45
+local LAND_FADE_MIN_XZ_SPEED = 4
+local LAND_LAYER_WEIGHT_SMOOTH_SPEED = 12
+local LAND_WEIGHT_SPEED_EASE_POWER = 1.5
 local MAX_TURN_LEAN_DEG = 14
 local TURN_LEAN_SENSITIVITY = 0.2
 local TURN_LEAN_SMOOTH_SPEED = 10
@@ -90,6 +91,11 @@ local function deltaAngle(a, b)
 	return (a - b + math.pi) % (2 * math.pi) - math.pi
 end
 
+local function getLandMovingSpeedAlpha(planarSpeed)
+	local span = math.max(1e-3, MAX_RUN_SPEED - LAND_FADE_MIN_XZ_SPEED)
+	return math.clamp((planarSpeed - LAND_FADE_MIN_XZ_SPEED) / span, 0, 1)
+end
+
 local function connect(signal, fn)
 	local c = signal:Connect(fn)
 	table.insert(_connections, c)
@@ -129,7 +135,6 @@ local function createMovementDriver(controller, humanoid, root)
 		local momentum = getBaseBlend(controller, "Momentum", 0)
 		local shiftHeld = getBaseBlend(controller, "ShiftHeld", false) == true
 		local airState = getBaseState(controller)
-		local landBlendTime = getBaseBlend(controller, "LandBlendTime", 0)
 		local turnLean = getBaseBlend(controller, "TurnLean", 0)
 
 		smoothedPlanarSpeed += (planarSpeed - smoothedPlanarSpeed) * math.clamp(dt * SPEED_SMOOTH_SPEED, 0, 1)
@@ -168,23 +173,12 @@ local function createMovementDriver(controller, humanoid, root)
 		end
 		turnLean = turnLean + (targetLean - turnLean) * math.clamp(dt * TURN_LEAN_SMOOTH_SPEED, 0, 1)
 
-		if airState == "Land" then
-			landBlendTime += dt
-			if landBlendTime >= LAND_BLEND_DURATION then
-				airState = setBaseState(controller, "Ground")
-				landBlendTime = 0
-			end
-		else
-			landBlendTime = 0
-		end
-
 		setBaseState(controller, airState)
 		setBaseBlend(controller, "Speed", planarSpeed)
 		setBaseBlend(controller, "Direction", moveDir)
 		setBaseBlend(controller, "Moving", isMoving)
 		setBaseBlend(controller, "Momentum", momentum)
 		setBaseBlend(controller, "ShiftHeld", shiftHeld)
-		setBaseBlend(controller, "LandBlendTime", landBlendTime)
 		setBaseBlend(controller, "TurnLean", turnLean)
 		setBaseBlend(controller, "SmoothedPlanarSpeed", smoothedPlanarSpeed)
 		setBaseBlend(controller, "LastYaw", lastYaw)
@@ -219,36 +213,41 @@ local function createHumanoidStateDriver(controller, humanoid)
 			airState = setBaseState(controller, "Jump")
 			controller:MarkLayerAnimationStart("Base", "Jump")
 			controller:Play("Jump")
+			controller:StopTrack("Land", 0.2)
 		elseif new == Enum.HumanoidStateType.Freefall then
 			wasAirborne = setBaseBlend(controller, "WasAirborne", true)
 			airState = setBaseState(controller, "Fall")
 			controller:MarkLayerAnimationStart("Base", "Fall")
+			controller:StopTrack("Land", 0.2)
 			controller:Play("Fall")
 		elseif new == Enum.HumanoidStateType.Climbing then
 			airState = setBaseState(controller, "Climb")
 			wasAirborne = setBaseBlend(controller, "WasAirborne", false)
 			controller:MarkLayerAnimationStart("Base", "Climb")
 			controller:Play("Climb")
-		elseif new == Enum.HumanoidStateType.Landed
-			or new == Enum.HumanoidStateType.Running
-			or new == Enum.HumanoidStateType.RunningNoPhysics then
+			controller:StopTrack("Land", 0.2)
+		elseif new == Enum.HumanoidStateType.Landed then
 
-			controller:StopTrack("Fall")
-			controller:StopTrack("Jump")
-			controller:StopTrack("Climb")
+			controller:StopTrack("Fall", 0.2)
+			controller:StopTrack("Jump", 0.2)
 
 			local canTriggerLand = wasAirborne
 				and (now - lastLandTriggerTime) >= LAND_RETRIGGER_COOLDOWN
 
 			if canTriggerLand then
-				airState = setBaseState(controller, "Land")
+				airState = setBaseState(controller, "Ground")
 				wasAirborne = setBaseBlend(controller, "WasAirborne", false)
 				lastLandTriggerTime = setBaseBlend(controller, "LastLandTriggerTime", now)
-				setBaseBlend(controller, "LandBlendTime", 0)
-				controller:MarkLayerAnimationStart("Base", "Land")
+				controller:MarkLayerAnimationStart("Landing", "Land")
 				print("land for ", humanoid.Parent.Name)
 				controller:Play("Land")
-			elseif airState ~= "Land" then
+			elseif airState ~= "Jump" and airState ~= "Fall" then
+				airState = setBaseState(controller, "Ground")
+				wasAirborne = setBaseBlend(controller, "WasAirborne", false)
+			end
+		elseif new == Enum.HumanoidStateType.Running
+			or new == Enum.HumanoidStateType.RunningNoPhysics then
+			if airState ~= "Jump" and airState ~= "Fall" then
 				airState = setBaseState(controller, "Ground")
 				wasAirborne = setBaseBlend(controller, "WasAirborne", false)
 			end
@@ -306,7 +305,9 @@ local function createFluxaController(character: Model, assets, isLocalController
 	}
 
 	local attackTrack = nil
+	local landTrack = nil
 	local attackPoseInfluence = 0
+	local landingWeightSmoothed = 0
 	local smoothedAimPitch = 0
 	local lastObservedBaseState = "Ground"
 
@@ -314,17 +315,25 @@ local function createFluxaController(character: Model, assets, isLocalController
 		Character = character,
 		AutoApplyPose = true,
 		AutoStart = true,
+		ReplicationSeekMode = "LoopingOnly",
 		OnPreStep = function(innerController, dt)
 			local currentBaseState = getBaseState(innerController)
 			if not isLocalController and currentBaseState ~= lastObservedBaseState then
-				if currentBaseState == "Land" then
-					print("replicated land for ", character.Name)
-					innerController:Play("Land")
-				elseif currentBaseState == "Jump" then
+				if currentBaseState == "Jump" then
 					innerController:Play("Jump")
 				end
 				lastObservedBaseState = currentBaseState
 			end
+
+			local landingWeight = 0
+			if landTrack and landTrack.Playing then
+				local landSpeed = getLayerBlend(innerController, "Base", "SmoothedPlanarSpeed", 0)
+				local speedAlpha = getLandMovingSpeedAlpha(landSpeed)
+				landingWeight = math.clamp(1 - math.pow(speedAlpha, LAND_WEIGHT_SPEED_EASE_POWER), 0, 1)
+			end
+			landingWeightSmoothed += (landingWeight - landingWeightSmoothed)
+				* math.clamp(dt * LAND_LAYER_WEIGHT_SMOOTH_SPEED, 0, 1)
+			innerController:SetLayerWeight("Landing", landingWeightSmoothed)
 
 			if isLocalController then
 				local rawAimPitch = math.clamp(getLayerBlend(innerController, "UpperBody", "AimPitchInput", 0), -1, 1)
@@ -370,8 +379,9 @@ local function createFluxaController(character: Model, assets, isLocalController
 			innerController:SetLayerWeight("UpperBody", attackPoseInfluence)
 		end,
 		OnPostBlend = function(innerController, finalPose, _dt)
+			local currentBaseState = getBaseState(innerController)
 			local turnLean = getLayerBlend(innerController, "Base", "TurnLean", 0)
-			if math.abs(turnLean) > 1e-4 then
+			if currentBaseState ~= "Jump" and currentBaseState ~= "Fall" and math.abs(turnLean) > 1e-4 then
 				local upperLean = CFrame.Angles(0, 0, -turnLean)
 				local lowerLean = CFrame.Angles(0, 0, -turnLean * 0.35)
 
@@ -420,16 +430,17 @@ local function createFluxaController(character: Model, assets, isLocalController
 		end,
 		Layers = {
 			Base = { Weight = 1, Order = 0 },
-			UpperBody = { Weight = 0, Order = 1, Mask = upperBodyMask },
+			Landing = { Weight = 0, Order = 1 },
+			UpperBody = { Weight = 0, Order = 2, Mask = upperBodyMask },
 		},
 	})
 
 	controller:SetLayerState("Base", "Ground")
+	controller:SetLayerState("Landing", "Idle")
 	controller:SetLayerState("UpperBody", "Idle")
 	setBaseBlend(controller, "ShiftHeld", false)
 	setBaseBlend(controller, "Momentum", 0)
 	setBaseBlend(controller, "WasAirborne", false)
-	setBaseBlend(controller, "LandBlendTime", 0)
 	setBaseBlend(controller, "LastLandTriggerTime", -math.huge)
 	setBaseBlend(controller, "SmoothedPlanarSpeed", 0)
 	setBaseBlend(controller, "LastYaw", getYaw(character:GetPivot()))
@@ -460,6 +471,7 @@ local function createFluxaController(character: Model, assets, isLocalController
 		Layer = "Base",
 		AutoManage = false,
 		IsOneShot = true,
+		ReplicationSeekMode = "Never",
 		TrackOptions = { Loop = false, Speed = 1, FadeInTime = 0.08, FadeOutTime = 0.16 },
 	})
 	controller:AddTrack("Fall", assets.Fall or {}, {
@@ -467,11 +479,12 @@ local function createFluxaController(character: Model, assets, isLocalController
 		AutoManage = true,
 		TrackOptions = { Loop = true, Speed = 1, FadeInTime = 0.14, FadeOutTime = 0.18 },
 	})
-	controller:AddTrack("Land", assets.Land or {}, {
-		Layer = "Base",
+	landTrack = controller:AddTrack("Land", assets.Land or {}, {
+		Layer = "Landing",
 		AutoManage = false,
 		IsOneShot = true,
-		TrackOptions = { Loop = false, Speed = 1, FadeInTime = 0.08, FadeOutTime = 0.16 },
+		ReplicationSeekMode = "Never",
+		TrackOptions = { Loop = false, Speed = 1, FadeInTime = 0.08, FadeOutTime = 0.08 },
 	})
 	controller:AddTrack("Climb", assets.Climb or {}, {
 		Layer = "Base",
@@ -483,6 +496,7 @@ local function createFluxaController(character: Model, assets, isLocalController
 		AutoManage = false,
 		IsOneShot = true,
 		InitialWeight = 0,
+		ReplicationSeekMode = "Never",
 		TrackOptions = { Loop = false, Speed = 1, FadeInTime = 0.08, FadeOutTime = 0.14 },
 	})
 
@@ -492,7 +506,6 @@ local function createFluxaController(character: Model, assets, isLocalController
 		local shiftHeld = getLayerBlend(innerController, "Base", "ShiftHeld", false) == true
 		local momentum = getLayerBlend(innerController, "Base", "Momentum", 0)
 		local airState = (innerController.Layers.Base and innerController.Layers.Base.State) or "Ground"
-		local landBlendTime = getLayerBlend(innerController, "Base", "LandBlendTime", 0)
 		local direction = getLayerBlend(innerController, "Base", "Direction", Vector3.zero)
 		local moveMag = math.min(1, direction.Magnitude)
 
@@ -504,7 +517,6 @@ local function createFluxaController(character: Model, assets, isLocalController
 				Run = 0,
 				Jump = 1,
 				Fall = 0,
-				Land = 0,
 				Climb = 0,
 			}
 		elseif airState == "Fall" then
@@ -515,7 +527,6 @@ local function createFluxaController(character: Model, assets, isLocalController
 				Run = 0,
 				Jump = 0,
 				Fall = 1,
-				Land = 0,
 				Climb = 0,
 			}
 		elseif airState == "Climb" then
@@ -526,40 +537,7 @@ local function createFluxaController(character: Model, assets, isLocalController
 				Run = 0,
 				Jump = 0,
 				Fall = 0,
-				Land = 0,
 				Climb = 1,
-			}
-		elseif airState == "Land" then
-			local landProgress = math.clamp(landBlendTime / LAND_BLEND_DURATION, 0, 1)
-			local groundAlpha = math.clamp(
-				LAND_GROUND_START_ALPHA + (1 - LAND_GROUND_START_ALPHA) * landProgress,
-				0,
-				1
-			)
-			local landAlpha = 1 - groundAlpha
-
-			if shiftHeld then
-				return {
-					Idle = (1 - moveMag) * groundAlpha,
-					SlowWalk = moveMag * groundAlpha,
-					Walk = 0,
-					Run = 0,
-					Jump = 0,
-					Fall = 0,
-					Land = landAlpha,
-					Climb = 0,
-				}
-			end
-
-			return {
-				Idle = (1 - moveMag) * groundAlpha,
-				SlowWalk = 0,
-				Walk = moveMag * (1 - momentum) * groundAlpha,
-				Run = moveMag * momentum * groundAlpha,
-				Jump = 0,
-				Fall = 0,
-				Land = landAlpha,
-				Climb = 0,
 			}
 		end
 
@@ -571,7 +549,6 @@ local function createFluxaController(character: Model, assets, isLocalController
 				Run = 0,
 				Jump = 0,
 				Fall = 0,
-				Land = 0,
 				Climb = 0,
 			}
 		end
@@ -585,7 +562,6 @@ local function createFluxaController(character: Model, assets, isLocalController
 				Run = 0,
 				Jump = 0,
 				Fall = 0,
-				Land = 0,
 				Climb = 0,
 			}
 		end
@@ -597,7 +573,6 @@ local function createFluxaController(character: Model, assets, isLocalController
 			Run = moveMag * momentum,
 			Jump = 0,
 			Fall = 0,
-			Land = 0,
 			Climb = 0,
 		}
 	end)

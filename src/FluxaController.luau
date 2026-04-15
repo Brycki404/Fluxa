@@ -17,6 +17,7 @@ type JointMaskList = {string}
 type JointMaskInput = JointMask | JointMaskList
 type PoseData = {[string]: CFrame}
 type LayerBlendMode = "Override" | "Additive"
+type ReplicationSeekMode = "Always" | "LoopingOnly" | "Never"
 type LayerReplicationState = {
 	State: string?,
 	BlendParams: {[string]: any},
@@ -46,6 +47,7 @@ export type TrackConfig = {
 	AutoManage: boolean?,
 	IsOneShot: boolean?,
 	InitialWeight: number?,
+	ReplicationSeekMode: ReplicationSeekMode?,
 }
 
 export type NewOptions = {
@@ -53,6 +55,7 @@ export type NewOptions = {
 	AutoApplyPose: boolean?,
 	AutoStart: boolean?,
 	WeightSmoothingSpeed: number?,
+	ReplicationSeekMode: ReplicationSeekMode?,
 	Drivers: AnyMap?,
 	Params: AnyMap?,
 	Layers: {[string]: LayerConfig}?,
@@ -76,6 +79,7 @@ type TrackState = {
 	Track: any,
 	AutoManage: boolean,
 	IsOneShot: boolean,
+	ReplicationSeekMode: ReplicationSeekMode,
 }
 
 export type ControllerInstance = {
@@ -130,6 +134,7 @@ export type ControllerInstance = {
 	_trackTargets: NumberMap,
 	_smoothedTrackWeights: NumberMap,
 	_blendTrees: {[string]: BlendTreeResolver},
+	_defaultReplicationSeekMode: ReplicationSeekMode,
 	_appliedReplicationAnimationStartTimes: {[string]: {[string]: number}},
 	_drivers: AnyMap,
 	_jointMap: {[string]: any},
@@ -194,6 +199,15 @@ local function normalizeBlendMode(mode: LayerBlendMode?): LayerBlendMode
 		return "Additive"
 	end
 	return "Override"
+end
+
+local function normalizeReplicationSeekMode(mode: ReplicationSeekMode?): ReplicationSeekMode
+	if mode == "Always" then
+		return "Always"
+	elseif mode == "Never" then
+		return "Never"
+	end
+	return "LoopingOnly"
 end
 
 local function getReplicationClock(): number
@@ -345,6 +359,7 @@ function FluxaController.new(options: NewOptions): ControllerInstance
 	self._trackTargets = {}
 	self._smoothedTrackWeights = {}
 	self._blendTrees = {}
+	self._defaultReplicationSeekMode = normalizeReplicationSeekMode(options.ReplicationSeekMode)
 	self._appliedReplicationAnimationStartTimes = {}
 	self._drivers = table.clone(options.Drivers or options.Params or {})
 	self.Layers = {}
@@ -550,11 +565,20 @@ function FluxaController.ApplyReplicationPacket(self: ControllerInstance, packet
 						track:Play(0)
 					end
 
-					local replicatedTime = math.max(0, now - startTime)
-					if (track :: any).TimePosition ~= nil then
-						(track :: any).TimePosition = replicatedTime
-					elseif (track :: any).Time ~= nil then
-						(track :: any).Time = replicatedTime
+					local shouldSeekReplicationTime = false
+					if trackState.ReplicationSeekMode == "Always" then
+						shouldSeekReplicationTime = true
+					elseif trackState.ReplicationSeekMode == "LoopingOnly" then
+						shouldSeekReplicationTime = not trackState.IsOneShot
+					end
+
+					if shouldSeekReplicationTime then
+						local replicatedTime = math.max(0, now - startTime)
+						if (track :: any).TimePosition ~= nil then
+							(track :: any).TimePosition = replicatedTime
+						elseif (track :: any).Time ~= nil then
+							(track :: any).Time = replicatedTime
+						end
 					end
 				end
 			end
@@ -579,6 +603,9 @@ function FluxaController.AddTrack(self: ControllerInstance, name: string, asset:
 		Track = track,
 		AutoManage = if config and config.AutoManage ~= nil then config.AutoManage else true,
 		IsOneShot = if config and config.IsOneShot ~= nil then config.IsOneShot else false,
+		ReplicationSeekMode = if config and config.ReplicationSeekMode ~= nil
+			then normalizeReplicationSeekMode(config.ReplicationSeekMode)
+			else self._defaultReplicationSeekMode,
 	}
 
 	if not hasKey(self._trackNames, name) then
@@ -638,24 +665,12 @@ function FluxaController.RemoveBlendTree(self: ControllerInstance, name: string)
 	self._blendTrees[name] = nil
 end
 
-function FluxaController.Set(self: ControllerInstance, key: string, value: any)
+function FluxaController.SetDriver(self: ControllerInstance, key: string, value: any)
 	self._drivers[key] = value
 end
 
-function FluxaController.Get(self: ControllerInstance, key: string)
-	return self._drivers[key]
-end
-
-function FluxaController.SetBlend(self: ControllerInstance, key: string, value: any)
-	self:Set(key, value)
-end
-
-function FluxaController.SetDriver(self: ControllerInstance, key: string, value: any)
-	self:Set(key, value)
-end
-
 function FluxaController.GetDriver(self: ControllerInstance, key: string)
-	return self:Get(key)
+	return self._drivers[key]
 end
 
 function FluxaController.Play(self: ControllerInstance, trackName: string, fadeInTime: number?)

@@ -56,8 +56,8 @@ local controller = Fluxa.FluxaController.new({
 })
 
 controller:Play("Walk")
-controller:Set("Speed", 10)
-controller:Set("Direction", Vector3.new(1, 0, 0))
+controller:SetDriver("Speed", 10)
+controller:SetDriver("Direction", Vector3.new(1, 0, 0))
 ```
 
 ### Layers (simple + optional)
