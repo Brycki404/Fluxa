@@ -24,13 +24,17 @@ local MOMENTUM_DECAY_RATE = 0.4
 local SHIFT_KEY = Enum.KeyCode.C
 local SPEED_SMOOTH_SPEED = 10
 local LAND_RETRIGGER_COOLDOWN = 0.12
-local LAND_FADE_MIN_XZ_SPEED = 4
+local LAND_FADE_HALF_SPEED = 9
 local LAND_LAYER_WEIGHT_SMOOTH_SPEED = 12
 local LAND_WEIGHT_SPEED_EASE_POWER = 1.5
 local MAX_TURN_LEAN_DEG = 14
 local TURN_LEAN_SENSITIVITY = 0.2
 local TURN_LEAN_SMOOTH_SPEED = 10
 local MIN_LEAN_SCALE = 0.2
+local LOCOMOTION_MIN_CYCLE_RATE = 0.8
+local LOCOMOTION_MAX_CYCLE_RATE = 2.0
+local CLIMB_MIN_CYCLE_RATE = 0.8
+local CLIMB_MAX_CYCLE_RATE = 1.8
 local MAX_DELTA_AIM_PITCH_DEG = 65
 local MAX_AIM_PITCH_DEG = 65
 local MIN_AIM_PITCH_DEG = -65
@@ -91,9 +95,25 @@ local function deltaAngle(a, b)
 	return (a - b + math.pi) % (2 * math.pi) - math.pi
 end
 
+local function syncTrackPhase(track, phase)
+	if not track then
+		return
+	end
+	local asset = track.Asset
+	if not asset or not asset.GetLength then
+		return
+	end
+	local duration = asset:GetLength()
+	if duration and duration > 0 and track.Time ~= nil then
+		track.Time = phase * duration
+	end
+end
+
 local function getLandMovingSpeedAlpha(planarSpeed)
-	local span = math.max(1e-3, MAX_RUN_SPEED - LAND_FADE_MIN_XZ_SPEED)
-	return math.clamp((planarSpeed - LAND_FADE_MIN_XZ_SPEED) / span, 0, 1)
+	local speed = math.max(0, planarSpeed)
+	local half = math.max(1e-3, LAND_FADE_HALF_SPEED)
+	-- Continuous 0..1 response: alpha is 0.5 when speed == LAND_FADE_HALF_SPEED.
+	return math.clamp(speed / (speed + half), 0, 1)
 end
 
 local function connect(signal, fn)
@@ -306,8 +326,13 @@ local function createFluxaController(character: Model, assets, isLocalController
 
 	local attackTrack = nil
 	local landTrack = nil
+	local slowWalkTrack = nil
+	local walkTrack = nil
+	local runTrack = nil
+	local climbTrack = nil
 	local attackPoseInfluence = 0
 	local landingWeightSmoothed = 0
+	local locomotionPhase = 0
 	local smoothedAimPitch = 0
 	local lastObservedBaseState = "Ground"
 
@@ -318,6 +343,8 @@ local function createFluxaController(character: Model, assets, isLocalController
 		ReplicationSeekMode = "LoopingOnly",
 		OnPreStep = function(innerController, dt)
 			local currentBaseState = getBaseState(innerController)
+			local smoothedPlanarSpeed = getLayerBlend(innerController, "Base", "SmoothedPlanarSpeed", 0)
+			local moving = getLayerBlend(innerController, "Base", "Moving", false) == true
 			if not isLocalController and currentBaseState ~= lastObservedBaseState then
 				if currentBaseState == "Jump" then
 					innerController:Play("Jump")
@@ -325,10 +352,36 @@ local function createFluxaController(character: Model, assets, isLocalController
 				lastObservedBaseState = currentBaseState
 			end
 
+			-- Phase-drive locomotion tracks so blends stay foot-synced across walk/run weights.
+			local locomotionCycleRate = 0
+			if moving then
+				locomotionCycleRate = math.clamp(
+					smoothedPlanarSpeed / BASE_WALK_SPEED,
+					LOCOMOTION_MIN_CYCLE_RATE,
+					LOCOMOTION_MAX_CYCLE_RATE
+				)
+			end
+			locomotionPhase = (locomotionPhase + dt * locomotionCycleRate) % 1
+			syncTrackPhase(slowWalkTrack, locomotionPhase)
+			syncTrackPhase(walkTrack, locomotionPhase)
+			syncTrackPhase(runTrack, locomotionPhase)
+
+			if slowWalkTrack then
+				slowWalkTrack.Speed = 0
+			end
+			if walkTrack then
+				walkTrack.Speed = 0
+			end
+			if runTrack then
+				runTrack.Speed = 0
+			end
+			if climbTrack then
+				climbTrack.Speed = math.clamp(smoothedPlanarSpeed / BASE_WALK_SPEED, CLIMB_MIN_CYCLE_RATE, CLIMB_MAX_CYCLE_RATE)
+			end
+
 			local landingWeight = 0
 			if landTrack and landTrack.Playing then
-				local landSpeed = getLayerBlend(innerController, "Base", "SmoothedPlanarSpeed", 0)
-				local speedAlpha = getLandMovingSpeedAlpha(landSpeed)
+				local speedAlpha = getLandMovingSpeedAlpha(smoothedPlanarSpeed)
 				landingWeight = math.clamp(1 - math.pow(speedAlpha, LAND_WEIGHT_SPEED_EASE_POWER), 0, 1)
 			end
 			landingWeightSmoothed += (landingWeight - landingWeightSmoothed)
@@ -452,17 +505,17 @@ local function createFluxaController(character: Model, assets, isLocalController
 		InitialWeight = 1,
 		TrackOptions = { Loop = true, Speed = 1, FadeInTime = 0.2, FadeOutTime = 0.2 },
 	})
-	controller:AddTrack("Walk", assets.Walk or {}, {
+	walkTrack = controller:AddTrack("Walk", assets.Walk or {}, {
 		Layer = "Base",
 		AutoManage = true,
 		TrackOptions = { Loop = true, Speed = 1, FadeInTime = 0.2, FadeOutTime = 0.2 },
 	})
-	controller:AddTrack("Run", assets.Run or {}, {
+	runTrack = controller:AddTrack("Run", assets.Run or {}, {
 		Layer = "Base",
 		AutoManage = true,
 		TrackOptions = { Loop = true, Speed = 1, FadeInTime = 0.18, FadeOutTime = 0.2 },
 	})
-	controller:AddTrack("SlowWalk", assets.SlowWalk or assets.Walk or {}, {
+	slowWalkTrack = controller:AddTrack("SlowWalk", assets.SlowWalk or assets.Walk or {}, {
 		Layer = "Base",
 		AutoManage = true,
 		TrackOptions = { Loop = true, Speed = 1, FadeInTime = 0.2, FadeOutTime = 0.24 },
@@ -486,7 +539,7 @@ local function createFluxaController(character: Model, assets, isLocalController
 		ReplicationSeekMode = "Never",
 		TrackOptions = { Loop = false, Speed = 1, FadeInTime = 0.08, FadeOutTime = 0.08 },
 	})
-	controller:AddTrack("Climb", assets.Climb or {}, {
+	climbTrack = controller:AddTrack("Climb", assets.Climb or {}, {
 		Layer = "Base",
 		AutoManage = true,
 		TrackOptions = { Loop = true, Speed = 1, FadeInTime = 0.18, FadeOutTime = 0.22 },
