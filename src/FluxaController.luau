@@ -2,6 +2,7 @@
 -- FluxaController: configurable animation graph owner for tracks, drivers, blend trees, and layers.
 
 local RunService = game:GetService("RunService")
+local Workspace = game:GetService("Workspace")
 
 local AnimationTrack = require(script.Parent.AnimationTrack)
 local UniversalJointWriter = require(script.Parent.UniversalJointWriter)
@@ -16,6 +17,17 @@ type JointMaskList = {string}
 type JointMaskInput = JointMask | JointMaskList
 type PoseData = {[string]: CFrame}
 type LayerBlendMode = "Override" | "Additive"
+type LayerReplicationState = {
+	State: string?,
+	BlendParams: {[string]: any},
+	AnimationStartTimes: {[string]: number},
+}
+type ReplicationPacket = {
+	Timestamp: number,
+	Layers: {[string]: LayerReplicationState},
+}
+
+local ANIMATION_START_REPLICATION_WINDOW = 0.6
 
 export type BlendTreeResolver = (self: ControllerInstance, dt: number) -> NumberMap?
 
@@ -79,6 +91,11 @@ export type ControllerInstance = {
 	SetLayerWeight: (self: ControllerInstance, name: string, weight: number) -> (),
 	SetLayerBlendMode: (self: ControllerInstance, name: string, blendMode: LayerBlendMode) -> (),
 	SetLayerMask: (self: ControllerInstance, name: string, mask: JointMaskInput?) -> (),
+	SetLayerState: (self: ControllerInstance, layerName: string, stateName: string?) -> (),
+	SetLayerBlend: (self: ControllerInstance, layerName: string, paramName: string, value: any) -> (),
+	MarkLayerAnimationStart: (self: ControllerInstance, layerName: string, animationName: string) -> number,
+	GetReplicationPacket: (self: ControllerInstance) -> ReplicationPacket,
+	ApplyReplicationPacket: (self: ControllerInstance, packet: ReplicationPacket) -> (),
 
 	AddTrack: (self: ControllerInstance, name: string, asset: any, config: TrackConfig?) -> any,
 	RemoveTrack: (self: ControllerInstance, name: string) -> (),
@@ -104,6 +121,8 @@ export type ControllerInstance = {
 	StopLoop: (self: ControllerInstance) -> (),
 	Destroy: (self: ControllerInstance) -> (),
 
+	Layers: {[string]: LayerReplicationState},
+
 	_layers: {[string]: LayerState},
 	_layerNames: {string},
 	_tracks: {[string]: TrackState},
@@ -111,6 +130,7 @@ export type ControllerInstance = {
 	_trackTargets: NumberMap,
 	_smoothedTrackWeights: NumberMap,
 	_blendTrees: {[string]: BlendTreeResolver},
+	_appliedReplicationAnimationStartTimes: {[string]: {[string]: number}},
 	_drivers: AnyMap,
 	_jointMap: {[string]: any},
 	_retarget: {[string]: string},
@@ -174,6 +194,46 @@ local function normalizeBlendMode(mode: LayerBlendMode?): LayerBlendMode
 		return "Additive"
 	end
 	return "Override"
+end
+
+local function getReplicationClock(): number
+	local ok, serverNow = pcall(function()
+		return Workspace:GetServerTimeNow()
+	end)
+	if ok and type(serverNow) == "number" then
+		return serverNow
+	end
+	return os.clock()
+end
+
+local function cloneLayerReplicationState(state: LayerReplicationState): LayerReplicationState
+	return {
+		State = state.State,
+		BlendParams = table.clone(state.BlendParams),
+		AnimationStartTimes = table.clone(state.AnimationStartTimes),
+	}
+end
+
+local function createDefaultLayerReplicationState(): LayerReplicationState
+	return {
+		State = nil,
+		BlendParams = {},
+		AnimationStartTimes = {},
+	}
+end
+
+local function collectRecentAnimationStartTimes(animationStartTimes: {[string]: number}, now: number): {[string]: number}
+	local recentAnimationStartTimes: {[string]: number} = {}
+
+	for animationName, startTime in pairs(animationStartTimes) do
+		if now - startTime <= ANIMATION_START_REPLICATION_WINDOW then
+			recentAnimationStartTimes[animationName] = startTime
+		else
+			animationStartTimes[animationName] = nil
+		end
+	end
+
+	return recentAnimationStartTimes
 end
 
 local function blendPoseOverride(target: PoseData, incoming: PoseData, weight: number, mask: JointMask?)
@@ -285,7 +345,9 @@ function FluxaController.new(options: NewOptions): ControllerInstance
 	self._trackTargets = {}
 	self._smoothedTrackWeights = {}
 	self._blendTrees = {}
+	self._appliedReplicationAnimationStartTimes = {}
 	self._drivers = table.clone(options.Drivers or options.Params or {})
+	self.Layers = {}
 	self._jointMap, self._retarget = UniversalJointWriter.BuildJointMap(self.Character)
 	self._updateConnection = nil
 
@@ -326,6 +388,10 @@ function FluxaController.AddLayer(self: ControllerInstance, name: string, config
 	}
 
 	self._layers[name] = nextLayer
+	if self.Layers[name] == nil then
+		self.Layers[name] = createDefaultLayerReplicationState()
+	end
+
 	if not hasKey(self._layerNames, name) then
 		table.insert(self._layerNames, name)
 	end
@@ -338,6 +404,7 @@ function FluxaController.RemoveLayer(self: ControllerInstance, name: string)
 	end
 
 	self._layers[name] = nil
+	self.Layers[name] = nil
 	removeKey(self._layerNames, name)
 
 	for _, track in pairs(self._tracks) do
@@ -369,6 +436,130 @@ function FluxaController.SetLayerMask(self: ControllerInstance, name: string, ma
 		return
 	end
 	layer.Mask = normalizeMask(mask)
+end
+
+function FluxaController.SetLayerState(self: ControllerInstance, layerName: string, stateName: string?)
+	if self._layers[layerName] == nil then
+		self:AddLayer(layerName, nil)
+	end
+
+	local layerState = self.Layers[layerName]
+	if layerState == nil then
+		layerState = createDefaultLayerReplicationState()
+		self.Layers[layerName] = layerState
+	end
+
+	layerState.State = stateName
+end
+
+function FluxaController.SetLayerBlend(self: ControllerInstance, layerName: string, paramName: string, value: any)
+	if self._layers[layerName] == nil then
+		self:AddLayer(layerName, nil)
+	end
+
+	local layerState = self.Layers[layerName]
+	if layerState == nil then
+		layerState = createDefaultLayerReplicationState()
+		self.Layers[layerName] = layerState
+	end
+
+	layerState.BlendParams[paramName] = value
+end
+
+function FluxaController.MarkLayerAnimationStart(self: ControllerInstance, layerName: string, animationName: string): number
+	if self._layers[layerName] == nil then
+		self:AddLayer(layerName, nil)
+	end
+
+	local layerState = self.Layers[layerName]
+	if layerState == nil then
+		layerState = createDefaultLayerReplicationState()
+		self.Layers[layerName] = layerState
+	end
+
+	local timestamp = getReplicationClock()
+	layerState.AnimationStartTimes[animationName] = timestamp
+	return timestamp
+end
+
+function FluxaController.GetReplicationPacket(self: ControllerInstance): ReplicationPacket
+	local now = getReplicationClock()
+	local layers: {[string]: LayerReplicationState} = {}
+	for layerName, layerState in pairs(self.Layers) do
+		local clonedLayerState = cloneLayerReplicationState(layerState)
+		clonedLayerState.AnimationStartTimes = collectRecentAnimationStartTimes(layerState.AnimationStartTimes, now)
+		layers[layerName] = clonedLayerState
+	end
+
+	return {
+		Timestamp = now,
+		Layers = layers,
+	}
+end
+
+function FluxaController.ApplyReplicationPacket(self: ControllerInstance, packet: ReplicationPacket)
+	if packet == nil or type(packet) ~= "table" then
+		return
+	end
+
+	local incomingLayers = packet.Layers
+	if incomingLayers == nil then
+		return
+	end
+
+	local now = getReplicationClock()
+
+	for layerName, incomingState in pairs(incomingLayers) do
+		if self._layers[layerName] == nil then
+			self:AddLayer(layerName, nil)
+		end
+
+		local layerState = self.Layers[layerName]
+		if layerState == nil then
+			layerState = createDefaultLayerReplicationState()
+			self.Layers[layerName] = layerState
+		end
+
+		local appliedAnimationStartTimes = self._appliedReplicationAnimationStartTimes[layerName]
+		if appliedAnimationStartTimes == nil then
+			appliedAnimationStartTimes = {}
+			self._appliedReplicationAnimationStartTimes[layerName] = appliedAnimationStartTimes
+		end
+
+		layerState.State = incomingState.State
+
+		table.clear(layerState.BlendParams)
+		for key, value in pairs(incomingState.BlendParams or {}) do
+			layerState.BlendParams[key] = value
+		end
+
+		table.clear(layerState.AnimationStartTimes)
+		for animationName, startTime in pairs(incomingState.AnimationStartTimes or {}) do
+			if type(startTime) == "number" then
+				layerState.AnimationStartTimes[animationName] = startTime
+
+				if appliedAnimationStartTimes[animationName] == startTime then
+					continue
+				end
+				appliedAnimationStartTimes[animationName] = startTime
+
+				local trackState = self._tracks[animationName]
+				if trackState ~= nil then
+					local track = trackState.Track
+					if not track.Playing then
+						track:Play(0)
+					end
+
+					local replicatedTime = math.max(0, now - startTime)
+					if (track :: any).TimePosition ~= nil then
+						(track :: any).TimePosition = replicatedTime
+					elseif (track :: any).Time ~= nil then
+						(track :: any).Time = replicatedTime
+					end
+				end
+			end
+		end
+	end
 end
 
 function FluxaController.AddTrack(self: ControllerInstance, name: string, asset: any, config: TrackConfig?)
@@ -581,7 +772,9 @@ function FluxaController.Destroy(self: ControllerInstance)
 	table.clear(self._trackTargets)
 	table.clear(self._smoothedTrackWeights)
 	table.clear(self._blendTrees)
+	table.clear(self._appliedReplicationAnimationStartTimes)
 	table.clear(self._drivers)
+	table.clear(self.Layers)
 end
 
 return FluxaController
