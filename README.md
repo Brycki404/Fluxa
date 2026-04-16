@@ -20,6 +20,7 @@ Add this to your wally.toml:
 
 **For Studio users**
 Download the latest rbxl file from [Github Releases](https://github.com/Brycki404/Fluxa/releases)
+https://www.roblox.com/games/107928648886650/Fluxa-Dev
 
 For more help, check out [the Rojo documentation](https://rojo.space/docs).
 
