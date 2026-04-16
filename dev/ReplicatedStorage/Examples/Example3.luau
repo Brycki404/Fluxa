@@ -53,10 +53,7 @@ function module:SetLocalReplicationEnabled(enabled: boolean)
 end
 
 local function getLayerBlend(controller, layerName, paramName, fallback)
-	local layers = controller and controller.Layers
-	local layer = layers and layers[layerName]
-	local blendParams = layer and layer.BlendParams
-	local value = blendParams and blendParams[paramName]
+	local value = controller:GetLayerDriver(layerName, paramName, false)
 	if value ~= nil then
 		return value
 	end
@@ -64,7 +61,7 @@ local function getLayerBlend(controller, layerName, paramName, fallback)
 end
 
 local function setLayerBlend(controller, layerName, paramName, value)
-	controller:SetLayerBlend(layerName, paramName, value)
+	controller:SetLayerDriver(layerName, paramName, value)
 	return value
 end
 
@@ -77,12 +74,11 @@ local function setBaseBlend(controller, paramName, value)
 end
 
 local function getBaseState(controller)
-	local baseLayer = controller and controller.Layers and controller.Layers.Base
-	return (baseLayer and baseLayer.State) or "Ground"
+	return getLayerBlend(controller, "Base", "State", "Ground")
 end
 
 local function setBaseState(controller, stateName)
-	controller:SetLayerState("Base", stateName)
+	controller:SetLayerDriver("Base", "State", stateName)
 	return stateName
 end
 
@@ -282,7 +278,7 @@ local function createCombatDriver(controller)
 		end
 
 		if input.UserInputType == Enum.UserInputType.MouseButton1 then
-			controller:SetLayerState("UpperBody", "Attack")
+			controller:SetLayerDriver("UpperBody", "State", "Attack")
 			controller:MarkLayerAnimationStart("UpperBody", "Attack")
 			controller:Play("Attack")
 		end
@@ -292,7 +288,7 @@ end
 local function createCameraDriver(controller)
 	return connect(RunService.RenderStepped, function()
 		local look = Workspace.CurrentCamera and Workspace.CurrentCamera.CFrame.LookVector or Vector3.new(0, 0, -1)
-		controller:SetLayerBlend("UpperBody", "AimPitchInput", look.Y)
+		controller:SetLayerDriver("UpperBody", "AimPitchInput", look.Y)
 	end)
 end
 
@@ -410,12 +406,12 @@ local function createFluxaController(character: Model, assets, isLocalController
 				end
 
 				if isAttackPlaying then
-					innerController:SetLayerState("UpperBody", "Attack")
+					innerController:SetLayerDriver("UpperBody", "State", "Attack")
 				else
-					innerController:SetLayerState("UpperBody", "Idle")
+					innerController:SetLayerDriver("UpperBody", "State", "Idle")
 				end
-				innerController:SetLayerBlend("UpperBody", "AttackInfluence", attackPoseInfluence)
-				innerController:SetLayerBlend("UpperBody", "AimPitch", smoothedAimPitch)
+				innerController:SetLayerDriver("UpperBody", "AttackInfluence", attackPoseInfluence)
+				innerController:SetLayerDriver("UpperBody", "AimPitch", smoothedAimPitch)
 			else
 				local replicatedAimPitch = math.clamp(getLayerBlend(innerController, "UpperBody", "AimPitch", 0), -1, 1)
 				smoothedAimPitch += (replicatedAimPitch - smoothedAimPitch) * math.clamp(dt * AIM_PITCH_SMOOTH_SPEED, 0, 1)
@@ -488,9 +484,9 @@ local function createFluxaController(character: Model, assets, isLocalController
 		},
 	})
 
-	controller:SetLayerState("Base", "Ground")
-	controller:SetLayerState("Landing", "Idle")
-	controller:SetLayerState("UpperBody", "Idle")
+	controller:SetLayerDriver("Base", "State", "Ground")
+	controller:SetLayerDriver("Landing", "State", "Idle")
+	controller:SetLayerDriver("UpperBody", "State", "Idle")
 	setBaseBlend(controller, "ShiftHeld", false)
 	setBaseBlend(controller, "Momentum", 0)
 	setBaseBlend(controller, "WasAirborne", false)
@@ -558,7 +554,7 @@ local function createFluxaController(character: Model, assets, isLocalController
 		local moving = getLayerBlend(innerController, "Base", "Moving", false) == true
 		local shiftHeld = getLayerBlend(innerController, "Base", "ShiftHeld", false) == true
 		local momentum = getLayerBlend(innerController, "Base", "Momentum", 0)
-		local airState = (innerController.Layers.Base and innerController.Layers.Base.State) or "Ground"
+		local airState = getLayerBlend(innerController, "Base", "State", "Ground")
 		local direction = getLayerBlend(innerController, "Base", "Direction", Vector3.zero)
 		local moveMag = math.min(1, direction.Magnitude)
 

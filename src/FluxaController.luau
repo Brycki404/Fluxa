@@ -19,12 +19,12 @@ type PoseData = {[string]: CFrame}
 type LayerBlendMode = "Override" | "Additive"
 type ReplicationSeekMode = "Always" | "LoopingOnly" | "Never"
 type LayerReplicationState = {
-	State: string?,
-	BlendParams: {[string]: any},
+	Drivers: {[string]: any},
 	AnimationStartTimes: {[string]: number},
 }
 type ReplicationPacket = {
 	Timestamp: number,
+	Drivers: {[string]: any}?,
 	Layers: {[string]: LayerReplicationState},
 }
 
@@ -95,8 +95,8 @@ export type ControllerInstance = {
 	SetLayerWeight: (self: ControllerInstance, name: string, weight: number) -> (),
 	SetLayerBlendMode: (self: ControllerInstance, name: string, blendMode: LayerBlendMode) -> (),
 	SetLayerMask: (self: ControllerInstance, name: string, mask: JointMaskInput?) -> (),
-	SetLayerState: (self: ControllerInstance, layerName: string, stateName: string?) -> (),
-	SetLayerBlend: (self: ControllerInstance, layerName: string, paramName: string, value: any) -> (),
+	SetLayerDriver: (self: ControllerInstance, layerName: string, paramName: string, value: any) -> (),
+	GetLayerDriver: (self: ControllerInstance, layerName: string, paramName: string, fallbackToGlobal: boolean?) -> any,
 	MarkLayerAnimationStart: (self: ControllerInstance, layerName: string, animationName: string) -> number,
 	GetReplicationPacket: (self: ControllerInstance) -> ReplicationPacket,
 	ApplyReplicationPacket: (self: ControllerInstance, packet: ReplicationPacket) -> (),
@@ -222,16 +222,14 @@ end
 
 local function cloneLayerReplicationState(state: LayerReplicationState): LayerReplicationState
 	return {
-		State = state.State,
-		BlendParams = table.clone(state.BlendParams),
+		Drivers = table.clone(state.Drivers),
 		AnimationStartTimes = table.clone(state.AnimationStartTimes),
 	}
 end
 
 local function createDefaultLayerReplicationState(): LayerReplicationState
 	return {
-		State = nil,
-		BlendParams = {},
+		Drivers = {},
 		AnimationStartTimes = {},
 	}
 end
@@ -453,7 +451,7 @@ function FluxaController.SetLayerMask(self: ControllerInstance, name: string, ma
 	layer.Mask = normalizeMask(mask)
 end
 
-function FluxaController.SetLayerState(self: ControllerInstance, layerName: string, stateName: string?)
+function FluxaController.SetLayerDriver(self: ControllerInstance, layerName: string, paramName: string, value: any)
 	if self._layers[layerName] == nil then
 		self:AddLayer(layerName, nil)
 	end
@@ -464,21 +462,23 @@ function FluxaController.SetLayerState(self: ControllerInstance, layerName: stri
 		self.Layers[layerName] = layerState
 	end
 
-	layerState.State = stateName
+	layerState.Drivers[paramName] = value
 end
 
-function FluxaController.SetLayerBlend(self: ControllerInstance, layerName: string, paramName: string, value: any)
-	if self._layers[layerName] == nil then
-		self:AddLayer(layerName, nil)
-	end
-
+function FluxaController.GetLayerDriver(self: ControllerInstance, layerName: string, paramName: string, fallbackToGlobal: boolean?)
 	local layerState = self.Layers[layerName]
-	if layerState == nil then
-		layerState = createDefaultLayerReplicationState()
-		self.Layers[layerName] = layerState
+	if layerState ~= nil then
+		local layerValue = layerState.Drivers[paramName]
+		if layerValue ~= nil then
+			return layerValue
+		end
 	end
 
-	layerState.BlendParams[paramName] = value
+	if fallbackToGlobal ~= false then
+		return self._drivers[paramName]
+	end
+
+	return nil
 end
 
 function FluxaController.MarkLayerAnimationStart(self: ControllerInstance, layerName: string, animationName: string): number
@@ -508,6 +508,7 @@ function FluxaController.GetReplicationPacket(self: ControllerInstance): Replica
 
 	return {
 		Timestamp = now,
+		Drivers = table.clone(self._drivers),
 		Layers = layers,
 	}
 end
@@ -515,6 +516,13 @@ end
 function FluxaController.ApplyReplicationPacket(self: ControllerInstance, packet: ReplicationPacket)
 	if packet == nil or type(packet) ~= "table" then
 		return
+	end
+
+	if type(packet.Drivers) == "table" then
+		table.clear(self._drivers)
+		for key, value in pairs(packet.Drivers) do
+			self._drivers[key] = value
+		end
 	end
 
 	local incomingLayers = packet.Layers
@@ -541,13 +549,11 @@ function FluxaController.ApplyReplicationPacket(self: ControllerInstance, packet
 			self._appliedReplicationAnimationStartTimes[layerName] = appliedAnimationStartTimes
 		end
 
-		layerState.State = incomingState.State
-
-		table.clear(layerState.BlendParams)
-		for key, value in pairs(incomingState.BlendParams or {}) do
-			layerState.BlendParams[key] = value
+		table.clear(layerState.Drivers)
+		for key, value in pairs(incomingState.Drivers or {}) do
+			layerState.Drivers[key] = value
 		end
-
+		
 		table.clear(layerState.AnimationStartTimes)
 		for animationName, startTime in pairs(incomingState.AnimationStartTimes or {}) do
 			if type(startTime) == "number" then
@@ -665,11 +671,11 @@ function FluxaController.RemoveBlendTree(self: ControllerInstance, name: string)
 	self._blendTrees[name] = nil
 end
 
-function FluxaController.SetDriver(self: ControllerInstance, key: string, value: any)
+function FluxaController.SetGlobalDriver(self: ControllerInstance, key: string, value: any)
 	self._drivers[key] = value
 end
 
-function FluxaController.GetDriver(self: ControllerInstance, key: string)
+function FluxaController.GetGlobalDriver(self: ControllerInstance, key: string)
 	return self._drivers[key]
 end
 

@@ -56,8 +56,8 @@ local controller = Fluxa.FluxaController.new({
 })
 
 controller:Play("Walk")
-controller:SetDriver("Speed", 10)
-controller:SetDriver("Direction", Vector3.new(1, 0, 0))
+controller:SetGlobalDriver("Speed", 10)
+controller:SetGlobalDriver("Direction", Vector3.new(1, 0, 0))
 ```
 
 ### Layers (simple + optional)
@@ -69,16 +69,18 @@ controller:SetDriver("Direction", Vector3.new(1, 0, 0))
   - a list of bone names: `{ "UpperTorso", "Head" }`
 
 ### Core methods
-- `AddLayer(name, config)`
-- `SetLayerWeight(name, weight)`
-- `SetLayerBlendMode(name, blendMode)`
-- `AddTrack(name, asset, config)`
-- `CreateBlendTree(name, resolver)`
+- `AddLayer(layerName, config)`
+- `RemoveLayer(layerName)`
+- `SetLayerWeight(layerName, weight)`
+- `SetLayerBlendMode(layerName, blendMode)`
+- `SetLayerMask(layerName, jointMask)`
+- `SetLayerDriver(layerName, key, value)` / `GetLayerDriver(layerName, key)`
+- `AddTrack(trackName, asset, config)`
+- `CreateBlendTree(blendTreeName, resolver)`
 - `Play(trackName)` / `Stop(trackName?)`
-- `Set(key, value)` / `Get(key)`
-- `SetDriver(key, value)` / `GetDriver(key)`
+- `SetGlobalDriver(key, value)` / `GetGlobalDriver(key)`
 - `Start()` / `StopLoop()` / `Destroy()`
 
 ### Example setup in this repo
 - `Example3` demonstrates a controller-centric workflow where movement/combat/camera drivers only call controller API methods.
-- To run it in the demo place, set `StarterPlayerScripts/Client.ex` to `3`.
+- To run it in the demo place, set the attribute `StarterPlayerScripts/Client.ex` to `3`.
