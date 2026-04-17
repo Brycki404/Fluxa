@@ -229,23 +229,29 @@ local function createHumanoidStateDriver(controller, humanoid)
 			airState = setBaseState(controller, "Jump")
 			controller:MarkLayerAnimationStart("Base", "Jump")
 			controller:Play("Jump")
-			controller:StopTrack("Land", 0.2)
+			controller:Stop("Land", 0.2)
+			controller:Stop("Fall", 0.2)
+			controller:Stop("Climb", 0.2)
 		elseif new == Enum.HumanoidStateType.Freefall then
 			wasAirborne = setBaseBlend(controller, "WasAirborne", true)
 			airState = setBaseState(controller, "Fall")
 			controller:MarkLayerAnimationStart("Base", "Fall")
-			controller:StopTrack("Land", 0.2)
 			controller:Play("Fall")
+			controller:Stop("Jump", 0.2)
+			controller:Stop("Land", 0.2)
+			controller:Stop("Climb", 0.2)
 		elseif new == Enum.HumanoidStateType.Climbing then
 			airState = setBaseState(controller, "Climb")
 			wasAirborne = setBaseBlend(controller, "WasAirborne", false)
 			controller:MarkLayerAnimationStart("Base", "Climb")
 			controller:Play("Climb")
-			controller:StopTrack("Land", 0.2)
+			controller:Stop("Fall", 0.2)
+			controller:Stop("Jump", 0.2)
+			controller:Stop("Land", 0.2)
 		elseif new == Enum.HumanoidStateType.Landed then
-
-			controller:StopTrack("Fall", 0.2)
-			controller:StopTrack("Jump", 0.2)
+			controller:Stop("Fall", 0.2)
+			controller:Stop("Jump", 0.2)
+			controller:Stop("Climb", 0.2)
 
 			local canTriggerLand = wasAirborne
 				and (now - lastLandTriggerTime) >= LAND_RETRIGGER_COOLDOWN
@@ -262,10 +268,15 @@ local function createHumanoidStateDriver(controller, humanoid)
 				wasAirborne = setBaseBlend(controller, "WasAirborne", false)
 			end
 		elseif new == Enum.HumanoidStateType.Running
-			or new == Enum.HumanoidStateType.RunningNoPhysics then
+			or new == Enum.HumanoidStateType.RunningNoPhysics
+		then
+			controller:Stop("Fall", 0.2)
+			controller:Stop("Jump", 0.2)
+			controller:Stop("Climb", 0.2)
 			if airState ~= "Jump" and airState ~= "Fall" then
 				airState = setBaseState(controller, "Ground")
 				wasAirborne = setBaseBlend(controller, "WasAirborne", false)
+				
 			end
 		end
 	end)
@@ -299,6 +310,14 @@ local function disableBuiltInCharacterAnimation(character: Model)
 		if animator then
 			animator:Destroy()
 		end
+
+		--Disable humanoid states that aren't needed for this Character Controller
+		humanoid:SetStateEnabled(Enum.HumanoidStateType.Ragdoll, false)
+		humanoid:SetStateEnabled(Enum.HumanoidStateType.FallingDown, false)
+		humanoid:SetStateEnabled(Enum.HumanoidStateType.GettingUp, false)
+		humanoid:SetStateEnabled(Enum.HumanoidStateType.Physics, false)
+		humanoid:SetStateEnabled(Enum.HumanoidStateType.Climbing, false)
+		humanoid:SetStateEnabled(Enum.HumanoidStateType.Swimming, false)
 	end
 
 	local animateScript = character:FindFirstChild("Animate")
