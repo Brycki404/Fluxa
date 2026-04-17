@@ -16,9 +16,9 @@ local AnimationAsset = Fluxa.AnimationAsset
 local FluxaController = Fluxa.FluxaController
 local FluxaReplicationService = Fluxa.FluxaReplicationService
 
-local SLOW_WALK_SPEED = 6
-local BASE_WALK_SPEED = 10
-local MAX_RUN_SPEED = 22
+local SLOW_WALK_SPEED = 3
+local BASE_WALK_SPEED = 3
+local MAX_RUN_SPEED = 24
 local MOMENTUM_BUILD_RATE = 0.8
 local MOMENTUM_DECAY_RATE = 0.4
 local SHIFT_KEY = Enum.KeyCode.C
