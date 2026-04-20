@@ -567,23 +567,37 @@ function FluxaController.ApplyReplicationPacket(self: ControllerInstance, packet
 				local trackState = self._tracks[animationName]
 				if trackState ~= nil then
 					local track = trackState.Track
-					if not track.Playing then
+
+					if trackState.IsOneShot then
+						-- Always restart one-shots from the beginning when a new start time arrives.
+						if track.Playing then
+							track:Stop(0)
+						end
 						track:Play(0)
-					end
-
-					local shouldSeekReplicationTime = false
-					if trackState.ReplicationSeekMode == "Always" then
-						shouldSeekReplicationTime = true
-					elseif trackState.ReplicationSeekMode == "LoopingOnly" then
-						shouldSeekReplicationTime = not trackState.IsOneShot
-					end
-
-					if shouldSeekReplicationTime then
-						local replicatedTime = math.max(0, now - startTime)
 						if (track :: any).TimePosition ~= nil then
-							(track :: any).TimePosition = replicatedTime
+							(track :: any).TimePosition = 0
 						elseif (track :: any).Time ~= nil then
-							(track :: any).Time = replicatedTime
+							(track :: any).Time = 0
+						end
+					else
+						if not track.Playing then
+							track:Play(0)
+						end
+
+						local shouldSeekReplicationTime = false
+						if trackState.ReplicationSeekMode == "Always" then
+							shouldSeekReplicationTime = true
+						elseif trackState.ReplicationSeekMode == "LoopingOnly" then
+							shouldSeekReplicationTime = true
+						end
+
+						if shouldSeekReplicationTime then
+							local replicatedTime = math.max(0, now - startTime)
+							if (track :: any).TimePosition ~= nil then
+								(track :: any).TimePosition = replicatedTime
+							elseif (track :: any).Time ~= nil then
+								(track :: any).Time = replicatedTime
+							end
 						end
 					end
 				end
