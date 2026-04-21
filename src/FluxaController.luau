@@ -106,6 +106,8 @@ export type ControllerInstance = {
 	SetTrackLayer: (self: ControllerInstance, name: string, layerName: string) -> (),
 	SetTrackWeight: (self: ControllerInstance, name: string, weight: number) -> (),
 	GetTrackWeight: (self: ControllerInstance, name: string) -> number,
+	GetTrack: (self: ControllerInstance, name: string) -> any?,
+	GetPlayingTracks: (self: ControllerInstance) -> { any },
 
 	CreateBlendTree: (self: ControllerInstance, name: string, resolver: BlendTreeResolver) -> (),
 	RemoveBlendTree: (self: ControllerInstance, name: string) -> (),
@@ -675,6 +677,22 @@ end
 
 function FluxaController.GetTrackWeight(self: ControllerInstance, name: string): number
 	return self._trackTargets[name] or 0
+end
+
+function FluxaController.GetTrack(self: ControllerInstance, name: string): any?
+	local state = self._tracks[name]
+	return if state then state.Track else nil
+end
+
+function FluxaController.GetPlayingTracks(self: ControllerInstance): { any }
+	local result = {}
+	for _, trackName in ipairs(self._trackNames) do
+		local state = self._tracks[trackName]
+		if state and state.Track.Weight > 0 then
+			table.insert(result, state.Track)
+		end
+	end
+	return result
 end
 
 function FluxaController.CreateBlendTree(self: ControllerInstance, name: string, resolver: BlendTreeResolver)
