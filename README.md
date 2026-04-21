@@ -69,17 +69,43 @@ controller:SetGlobalDriver("Direction", Vector3.new(1, 0, 0))
   - a list of bone names: `{ "UpperTorso", "Head" }`
 
 ### Core methods
+
+**Layer methods**
 - `AddLayer(layerName, config)`
 - `RemoveLayer(layerName)`
 - `SetLayerWeight(layerName, weight)`
 - `SetLayerBlendMode(layerName, blendMode)`
 - `SetLayerMask(layerName, jointMask)`
 - `SetLayerDriver(layerName, key, value)` / `GetLayerDriver(layerName, key)`
-- `AddTrack(trackName, asset, config)`
+- `MarkLayerAnimationStart(layerName, trackName)`
+
+**Track methods**
+- `AddTrack(trackName, config)`
+- `RemoveTrack(trackName)`
+- `SetTrackLayer(trackName, layerName)`
+- `SetTrackWeight(trackName, weight)` / `GetTrackWeight(trackName)`
+- `GetTrack(name)` — returns the `AnimationTrackInstance` for a named track, or `nil`
+- `GetPlayingTracks()` — returns all tracks with `Weight > 0` in registration order
+
+**Blend tree methods**
 - `CreateBlendTree(blendTreeName, resolver)`
-- `Play(trackName)` / `Stop(trackName?)`
+- `RemoveBlendTree(blendTreeName)`
+
+**Playback methods**
+- `Play(trackName, fadeInTime?)`
+- `StopTrack(trackName, fadeOutTime?)`
+- `Stop(trackName?)`
+
+**Driver methods**
 - `SetGlobalDriver(key, value)` / `GetGlobalDriver(key)`
-- `Start()` / `StopLoop()` / `Destroy()`
+- `SetLayerDriver(layerName, key, value)` / `GetLayerDriver(layerName, key)`
+
+**Replication methods**
+- `GetReplicationPacket()`
+- `ApplyReplicationPacket(packet)`
+
+**Lifecycle**
+- `Step(dt)` / `Start()` / `StopLoop()` / `Destroy()`
 
 ### Example setup in this repo
 - `Example3` demonstrates a controller-centric workflow where movement/combat/camera drivers only call controller API methods.
