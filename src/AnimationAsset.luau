@@ -90,7 +90,15 @@ local function collectPosesRecursive(
 	channels: { [string]: { AnimationKeyframe } }
 )
 	local jointName = pose.Name
-	if jointName and pose.CFrame then
+
+	-- Bug Fix from @silentgalaxzy on Discord:
+	-- Skip poses authored as "no data at this keyframe" (Weight == 0).
+    -- These are placeholder markers on parent joints used by the Roblox
+    -- animation editor when only some joints are keyed on a given frame.
+    -- Treating them as real (identity) keyframes causes visible snap-back
+    -- on sparsely-keyframed animations.
+
+	if jointName and pose.CFrame and pose.Weight and pose.Weight > 0 then
 		channels[jointName] = channels[jointName] or {}
 		table.insert(channels[jointName], {
 			Name = pose.Name;

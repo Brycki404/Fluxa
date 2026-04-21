@@ -26,7 +26,6 @@ end
 
 local function characterAdded(character: Model)
 	local humanoid: Humanoid = character:WaitForChild("Humanoid") :: Humanoid
-	humanoid.AutoRotate = false
 
 	local value = script:GetAttribute(EXAMPLE_ATTRIBUTE)
 	if type(value) == "number" then
@@ -37,8 +36,10 @@ local function characterAdded(character: Model)
 	if thisExample == 1 then
 		ex1:Start(script)
 	elseif thisExample == 2 then
+		humanoid.AutoRotate = false
 		ex2:Start(script)
 	elseif thisExample == 3 then
+		humanoid.AutoRotate = false
 		ex3:Start(script)
 	end
 end
