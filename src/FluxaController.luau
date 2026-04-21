@@ -294,7 +294,7 @@ end
 local function blendLayerTracksIntoPose(controller: ControllerInstance, finalPose: PoseData, layerName: string, layer: LayerState, dt: number)
 	for _, trackName in ipairs(controller._trackNames) do
 		local track = controller._tracks[trackName]
-		if track.Layer ~= layerName or not track.Track.Playing then
+		if track.Layer ~= layerName or not track.Track.IsPlaying then
 			continue
 		end
 
@@ -570,7 +570,7 @@ function FluxaController.ApplyReplicationPacket(self: ControllerInstance, packet
 
 					if trackState.IsOneShot then
 						-- Always restart one-shots from the beginning when a new start time arrives.
-						if track.Playing then
+						if track.IsPlaying then
 							track:Stop(0)
 						end
 						track:Play(0)
@@ -580,7 +580,7 @@ function FluxaController.ApplyReplicationPacket(self: ControllerInstance, packet
 							(track :: any).Time = 0
 						end
 					else
-						if not track.Playing then
+						if not track.IsPlaying then
 							track:Play(0)
 						end
 
@@ -645,7 +645,7 @@ end
 
 function FluxaController.RemoveTrack(self: ControllerInstance, name: string)
 	local track = self._tracks[name]
-	if track and track.Track.Playing then
+	if track and track.Track.IsPlaying then
 		track.Track:Stop(0)
 	end
 
@@ -739,10 +739,10 @@ function FluxaController.Step(self: ControllerInstance, dt: number): PoseData
 
 		if track.AutoManage and not track.IsOneShot then
 			if target <= 0 then
-				if track.Track.Playing then
+				if track.Track.IsPlaying then
 					track.Track:Stop(track.Track.FadeOutTime)
 				end
-			elseif not track.Track.Playing then
+			elseif not track.Track.IsPlaying then
 				track.Track:Play(track.Track.FadeInTime)
 			end
 		end
@@ -795,7 +795,7 @@ function FluxaController.Destroy(self: ControllerInstance)
 	self:StopLoop()
 
 	for _, track in pairs(self._tracks) do
-		if track.Track.Playing then
+		if track.Track.IsPlaying then
 			track.Track:Stop(0)
 		end
 	end

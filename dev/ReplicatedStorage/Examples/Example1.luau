@@ -193,10 +193,10 @@ function module:Start(clientScript: LocalScript)
         local directionNames = { "Idle", "Forward", "Right", "Backward", "Left" }
         for _i: number, directionName: string in ipairs(directionNames) do
             if blendWeights[directionName] == 0 then
-                if animTracks[directionName] and animTracks[directionName].Playing then
+                if animTracks[directionName] and animTracks[directionName].IsPlaying then
                     animTracks[directionName]:Stop()
                 end
-            elseif animTracks[directionName] and not animTracks[directionName].Playing then
+            elseif animTracks[directionName] and not animTracks[directionName].IsPlaying then
                 animTracks[directionName]:Play()
             end
         end
@@ -207,7 +207,7 @@ function module:Start(clientScript: LocalScript)
         for directionName, weight in pairs(blendWeights) do
             if weight > 0 then
                 local aplr = animTracks[directionName]
-                if aplr and aplr.Playing then
+                if aplr and aplr.IsPlaying then
                     local sample = aplr:Update(deltaTime)
 
                     for joint, cf in pairs(sample.Transforms) do

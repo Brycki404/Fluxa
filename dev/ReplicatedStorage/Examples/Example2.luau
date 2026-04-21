@@ -191,7 +191,7 @@ function module:Start(clientScript: LocalScript)
         elseif new == Enum.HumanoidStateType.Freefall then
             wasAirborne = true
             airState = "Fall"
-            if not animTracks.Fall.Playing then
+            if not animTracks.Fall.IsPlaying then
                 print("FALL")
                 animTracks.Fall:Play()
             end
@@ -199,7 +199,7 @@ function module:Start(clientScript: LocalScript)
         elseif new == Enum.HumanoidStateType.Climbing then
             airState = "Climb"
             wasAirborne = false
-            if not animTracks.Climb.Playing then
+            if not animTracks.Climb.IsPlaying then
                 animTracks.Climb:Play()
             end
         elseif new == Enum.HumanoidStateType.Landed
@@ -207,7 +207,7 @@ function module:Start(clientScript: LocalScript)
             or new == Enum.HumanoidStateType.RunningNoPhysics then
 
             local canTriggerLand = wasAirborne
-                and not animTracks.Land.Playing
+                and not animTracks.Land.IsPlaying
                 and (now - lastLandTriggerTime) >= LAND_RETRIGGER_COOLDOWN
 
             if canTriggerLand then
@@ -301,7 +301,7 @@ function module:Start(clientScript: LocalScript)
         end
 
         -- Land is a short overlay; hand off quickly to locomotion.
-        if airState == "Land" and (not animTracks.Land.Playing or landBlendTime >= LAND_BLEND_DURATION) then
+        if airState == "Land" and (not animTracks.Land.IsPlaying or landBlendTime >= LAND_BLEND_DURATION) then
             airState = "Ground"
         end
 
@@ -312,12 +312,12 @@ function module:Start(clientScript: LocalScript)
         }
 
         if airState == "Jump" then
-            if animTracks.Jump.Playing then
+            if animTracks.Jump.IsPlaying then
                 blendWeights.Jump = 1
             else
                 -- jump anim ended before Freefall fired; fall back to Fall
                 blendWeights.Fall = 1
-                if not animTracks.Fall.Playing then
+                if not animTracks.Fall.IsPlaying then
                     animTracks.Fall:Play()
                 end
             end
@@ -379,10 +379,10 @@ function module:Start(clientScript: LocalScript)
             local aplr = animTracks[name]
             local w: number = smoothedWeights[name] or 0
             if w == 0 then
-                if aplr and aplr.Playing then
+                if aplr and aplr.IsPlaying then
                     aplr:Stop(aplr.FadeOutTime)
                 end
-            elseif aplr and not aplr.Playing then
+            elseif aplr and not aplr.IsPlaying then
                 aplr:Play()
             end
         end
@@ -393,7 +393,7 @@ function module:Start(clientScript: LocalScript)
         local sampledTransforms: {[string]: boolean} = {}
 
         for name: string, aplr in pairs(animTracks) do
-            if aplr.Playing then
+            if aplr.IsPlaying then
                 local logicalW: number = smoothedWeights[name] or 0
                 local effectiveW: number = if logicalW > 0 then aplr.Weight * logicalW else aplr.Weight
                 local sample = aplr:Update(deltaTime)

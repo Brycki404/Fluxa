@@ -398,7 +398,7 @@ local function createFluxaController(character: Model, assets, isLocalController
 			end
 
 			local landingWeight = 0
-			if landTrack and landTrack.Playing then
+			if landTrack and landTrack.IsPlaying then
 				local speedAlpha = getLandMovingSpeedAlpha(smoothedPlanarSpeed)
 				landingWeight = math.clamp(1 - math.pow(speedAlpha, LAND_WEIGHT_SPEED_EASE_POWER), 0, 1)
 			end
@@ -410,7 +410,7 @@ local function createFluxaController(character: Model, assets, isLocalController
 				local rawAimPitch = math.clamp(getLayerBlend(innerController, "UpperBody", "AimPitchInput", 0), -1, 1)
 				smoothedAimPitch += (rawAimPitch - smoothedAimPitch) * math.clamp(dt * AIM_PITCH_SMOOTH_SPEED, 0, 1)
 
-				local isAttackPlaying = attackTrack and attackTrack.Playing
+				local isAttackPlaying = attackTrack and attackTrack.IsPlaying
 				local targetInfluence = 0
 				if isAttackPlaying then
 					local trackWeight = math.clamp(attackTrack.Weight, 0, 1)
