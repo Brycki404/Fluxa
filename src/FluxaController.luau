@@ -131,7 +131,7 @@ export type ControllerInstance = {
 	SetGlobalDriverReplication: (self: ControllerInstance, key: string, enabled: boolean) -> (),
 	GetGlobalDriverReplication: (self: ControllerInstance, key: string) -> boolean,
 
-	Play: (self: ControllerInstance, trackName: string, fadeInTime: number?) -> (),
+	Play: (self: ControllerInstance, trackName: string, fadeInTime: number?, weight: number?, speed: number?) -> (),
 	StopTrack: (self: ControllerInstance, trackName: string, fadeOutTime: number?) -> (),
 	Stop: (self: ControllerInstance, trackName: string?, fadeOutTime: number?) -> (),
 
@@ -301,12 +301,12 @@ local function shouldTrackAutoReplicate(trackState: TrackState): boolean
 	return false
 end
 
-local function beginTrackPlayback(controller: ControllerInstance, trackName: string, trackState: TrackState, fadeInTime: number?)
+local function beginTrackPlayback(controller: ControllerInstance, trackName: string, trackState: TrackState, fadeInTime: number?, weight: number?, speed: number?)
 	if shouldTrackAutoReplicate(trackState) then
 		controller:MarkLayerAnimationStart(trackState.Layer, trackName)
 	end
 
-	trackState.Track:Play(fadeInTime)
+	trackState.Track:Play(fadeInTime, weight, speed)
 end
 
 local function blendPoseOverride(target: PoseData, incoming: PoseData, weight: number, mask: JointMask?)
@@ -853,14 +853,14 @@ function FluxaController.GetGlobalDriverReplication(self: ControllerInstance, ke
 	return self._globalDriverReplication[key] ~= false
 end
 
-function FluxaController.Play(self: ControllerInstance, trackName: string, fadeInTime: number?)
+function FluxaController.Play(self: ControllerInstance, trackName: string, fadeInTime: number?, weight: number?, speed: number?)
 	local track = self._tracks[trackName]
 	if not track then
 		return
 	end
 
 	self._trackTargets[trackName] = 1
-	beginTrackPlayback(self, trackName, track, fadeInTime)
+	beginTrackPlayback(self, trackName, track, fadeInTime, weight, speed)
 end
 
 function FluxaController.Stop(self: ControllerInstance, trackName: string, fadeOutTime: number?)
