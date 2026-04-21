@@ -8,7 +8,7 @@ type SignalType = any
 
 export type AnimationTrackOptions = {
 	Speed: number?,
-	Loop: boolean?,
+	Looped: boolean?,
 	FadeInTime: number?,
 	FadeOutTime: number?,
 }
@@ -19,12 +19,11 @@ export type AnimationTrackInstance = {
 	Length: number,
 	Time: number,
 	Speed: number,
-	Loop: boolean,
+	Looped: boolean,
 	FadeInTime: number,
 	FadeOutTime: number,
 	Weight: number,
 	IsPlaying: boolean,
-	Looped: boolean,
 	TimePosition: number,
 	Stopped: SignalType,
 	Ended: SignalType,
@@ -91,8 +90,7 @@ function AnimationTrack.new(asset: any, options: AnimationTrackOptions?): Animat
 	self.Time = 0
 	self.TimePosition = 0
 	self.Speed = if options and options.Speed ~= nil then options.Speed else 1
-	self.Loop = if options and options.Loop ~= nil then options.Loop else true
-	self.Looped = self.Loop
+	self.Looped = if options and options.Looped ~= nil then options.Looped else true
 	self.FadeInTime = if options and options.FadeInTime ~= nil then options.FadeInTime else 0.2
 	self.FadeOutTime = if options and options.FadeOutTime ~= nil then options.FadeOutTime else 0.2
 	self.Weight = 0
@@ -207,9 +205,6 @@ function AnimationTrack.Update(self: AnimationTrackInstance, dt: number)
 		return { Transforms = {}, Curves = {} }
 	end
 
-	-- Keep compatibility aliases synchronized if external code mutates either property.
-	self.Loop = self.Looped
-
 	-- Advance fade weight
 	if self._FadeDir == 1 then
 		self.Weight = if self._ActiveFadeInTime > 0
@@ -245,11 +240,11 @@ function AnimationTrack.Update(self: AnimationTrackInstance, dt: number)
 	local newTime = self.Time
 
 	-- Advance time; freeze at end for completed non-looping animations
-	if self.Loop or self.Time < duration then
+	if self.Looped or self.Time < duration then
 		newTime = self.Time + dt * self.Speed
 	end
 
-	if self.Loop and duration > 0 then
+	if self.Looped and duration > 0 then
 		local oldLoops = math.floor(previousTime / duration)
 		local newLoops = math.floor(newTime / duration)
 		for _ = 1, math.max(0, newLoops - oldLoops) do

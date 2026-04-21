@@ -85,7 +85,6 @@ type TrackState = {
 	Track: any,
 	AutoManage: boolean,
 	AutoReplicate: boolean,
-	Looped: boolean,
 	ReplicationSeekMode: ReplicationSeekMode,
 }
 
@@ -672,7 +671,7 @@ function FluxaController.ApplyReplicationPacket(self: ControllerInstance, packet
 				if trackState ~= nil then
 					local track = trackState.Track
 
-					if not trackState.Looped then
+					if not track.Looped then
 						-- Always restart non-looped tracks from the beginning when a new start time arrives.
 						if track.IsPlaying then
 							track:Stop(0)
@@ -692,7 +691,7 @@ function FluxaController.ApplyReplicationPacket(self: ControllerInstance, packet
 						if trackState.ReplicationSeekMode == "Always" then
 							shouldSeekReplicationTime = true
 						elseif trackState.ReplicationSeekMode == "LoopingOnly" then
-							shouldSeekReplicationTime = trackState.Looped
+							shouldSeekReplicationTime = track.Looped
 						end
 
 						if shouldSeekReplicationTime then
@@ -715,9 +714,6 @@ function FluxaController.AddTrack(self: ControllerInstance, name: string, asset:
 
 	local rawTrackOptions = if config and config.TrackOptions then config.TrackOptions else if config and config.PlayerOptions then config.PlayerOptions else nil
 	local trackOptions: {[string]: any} = if rawTrackOptions ~= nil then table.clone(rawTrackOptions) else {}
-	local looped = if config and config.Looped ~= nil then config.Looped else true
-	trackOptions.Looped = looped
-	trackOptions.Loop = looped
 	local track = AnimationTrack.new(asset, trackOptions)
 
 	local layerName = if config and config.Layer then config.Layer else "Base"
@@ -732,7 +728,6 @@ function FluxaController.AddTrack(self: ControllerInstance, name: string, asset:
 		Track = track,
 		AutoManage = if config and config.AutoManage ~= nil then config.AutoManage else true,
 		AutoReplicate = autoReplicate,
-		Looped = looped,
 		ReplicationSeekMode = if config and config.ReplicationSeekMode ~= nil
 			then normalizeReplicationSeekMode(config.ReplicationSeekMode)
 			else self._defaultReplicationSeekMode,
@@ -748,7 +743,7 @@ function FluxaController.AddTrack(self: ControllerInstance, name: string, asset:
 	self._trackTargets[name] = clamp01(initialWeight)
 	self._smoothedTrackWeights[name] = clamp01(initialWeight)
 
-	if self._tracks[name].AutoManage and self._trackTargets[name] > 0 and self._tracks[name].Looped then
+	if self._tracks[name].AutoManage and self._trackTargets[name] > 0 and self._tracks[name].Track.Looped then
 		beginTrackPlayback(self, name, self._tracks[name], track.FadeInTime)
 	end
 
@@ -892,7 +887,7 @@ function FluxaController.Step(self: ControllerInstance, dt: number): PoseData
 		local current = self._smoothedTrackWeights[trackName] or 0
 		self._smoothedTrackWeights[trackName] = current + (target - current) * clamp01(dt * self.WeightSmoothingSpeed)
 
-		if track.AutoManage and track.Looped then
+		if track.AutoManage and track.Track.Looped then
 			if target <= 0 then
 				if track.Track.IsPlaying then
 					track.Track:Stop(track.Track.FadeOutTime)

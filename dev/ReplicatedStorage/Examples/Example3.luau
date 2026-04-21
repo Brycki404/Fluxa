@@ -521,54 +521,51 @@ local function createFluxaController(character: Model, assets, isLocalController
 		Layer = "Base",
 		AutoManage = true,
 		InitialWeight = 1,
-		TrackOptions = { Loop = true, Speed = 1, FadeInTime = 0.2, FadeOutTime = 0.2 },
+		TrackOptions = { Looped = true, Speed = 1, FadeInTime = 0.2, FadeOutTime = 0.2 },
 	})
 	walkTrack = controller:AddTrack("Walk", assets.Walk or {}, {
 		Layer = "Base",
 		AutoManage = true,
-		TrackOptions = { Loop = true, Speed = 1, FadeInTime = 0.2, FadeOutTime = 0.2 },
+		TrackOptions = { Looped = true, Speed = 1, FadeInTime = 0.2, FadeOutTime = 0.2 },
 	})
 	runTrack = controller:AddTrack("Run", assets.Run or {}, {
 		Layer = "Base",
 		AutoManage = true,
-		TrackOptions = { Loop = true, Speed = 1, FadeInTime = 0.18, FadeOutTime = 0.2 },
+		TrackOptions = { Looped = true, Speed = 1, FadeInTime = 0.18, FadeOutTime = 0.2 },
 	})
 	slowWalkTrack = controller:AddTrack("SlowWalk", assets.SlowWalk or assets.Walk or {}, {
 		Layer = "Base",
 		AutoManage = true,
-		TrackOptions = { Loop = true, Speed = 1, FadeInTime = 0.2, FadeOutTime = 0.24 },
+		TrackOptions = { Looped = true, Speed = 1, FadeInTime = 0.2, FadeOutTime = 0.24 },
 	})
 	controller:AddTrack("Jump", assets.Jump or {}, {
 		Layer = "Base",
 		AutoManage = false,
-		Looped = false,
 		ReplicationSeekMode = "Never",
-		TrackOptions = { Loop = false, Speed = 1, FadeInTime = 0.08, FadeOutTime = 0.16 },
+		TrackOptions = { Looped = false, Speed = 1, FadeInTime = 0.08, FadeOutTime = 0.16 },
 	})
 	controller:AddTrack("Fall", assets.Fall or {}, {
 		Layer = "Base",
 		AutoManage = true,
-		TrackOptions = { Loop = true, Speed = 1, FadeInTime = 0.14, FadeOutTime = 0.18 },
+		TrackOptions = { Looped = true, Speed = 1, FadeInTime = 0.14, FadeOutTime = 0.18 },
 	})
 	landTrack = controller:AddTrack("Land", assets.Land or {}, {
 		Layer = "Landing",
 		AutoManage = false,
-		Looped = false,
 		ReplicationSeekMode = "Never",
-		TrackOptions = { Loop = false, Speed = 1, FadeInTime = 0.08, FadeOutTime = 0.08 },
+		TrackOptions = { Looped = false, Speed = 1, FadeInTime = 0.08, FadeOutTime = 0.08 },
 	})
 	climbTrack = controller:AddTrack("Climb", assets.Climb or {}, {
 		Layer = "Base",
 		AutoManage = true,
-		TrackOptions = { Loop = true, Speed = 1, FadeInTime = 0.18, FadeOutTime = 0.22 },
+		TrackOptions = { Looped = true, Speed = 1, FadeInTime = 0.18, FadeOutTime = 0.22 },
 	})
 	attackTrack = controller:AddTrack("Attack", assets.Attack or assets.Jump or {}, {
 		Layer = "UpperBody",
 		AutoManage = false,
-		Looped = false,
 		InitialWeight = 0,
 		ReplicationSeekMode = "Never",
-		TrackOptions = { Loop = false, Speed = 1, FadeInTime = 0.08, FadeOutTime = 0.14 },
+		TrackOptions = { Looped = false, Speed = 1, FadeInTime = 0.08, FadeOutTime = 0.14 },
 	})
 
 	controller:CreateBlendTree("Locomotion", function(innerController, _dt)

@@ -116,14 +116,14 @@ function module:Start(clientScript: LocalScript)
     end
 
     local animTracks = {
-        Idle     = AnimationTrack.new(animAssets.Idle     or {}, { Speed = 1, Loop = true,  FadeInTime = 0.18, FadeOutTime = 0.22 });
-        SlowWalk = AnimationTrack.new(animAssets.SlowWalk or {}, { Speed = 1, Loop = true,  FadeInTime = 0.20, FadeOutTime = 0.24 });
-        Walk     = AnimationTrack.new(animAssets.Walk     or {}, { Speed = 1, Loop = true,  FadeInTime = 0.20, FadeOutTime = 0.24 });
-        Run      = AnimationTrack.new(animAssets.Run      or {}, { Speed = 1, Loop = true,  FadeInTime = 0.18, FadeOutTime = 0.22 });
-        Jump     = AnimationTrack.new(animAssets.Jump     or {}, { Speed = 1, Loop = false, FadeInTime = 0.08, FadeOutTime = 0.16 });
-        Fall     = AnimationTrack.new(animAssets.Fall     or {}, { Speed = 1, Loop = true,  FadeInTime = 0.14, FadeOutTime = 0.18 });
-        Land     = AnimationTrack.new(animAssets.Land     or {}, { Speed = 1, Loop = false, FadeInTime = 0.08, FadeOutTime = 0.16 });
-        Climb    = AnimationTrack.new(animAssets.Climb    or {}, { Speed = 1, Loop = true,  FadeInTime = 0.18, FadeOutTime = 0.22 });
+        Idle     = AnimationTrack.new(animAssets.Idle     or {}, { Speed = 1, Looped = true,  FadeInTime = 0.18, FadeOutTime = 0.22 });
+        SlowWalk = AnimationTrack.new(animAssets.SlowWalk or {}, { Speed = 1, Looped = true,  FadeInTime = 0.20, FadeOutTime = 0.24 });
+        Walk     = AnimationTrack.new(animAssets.Walk     or {}, { Speed = 1, Looped = true,  FadeInTime = 0.20, FadeOutTime = 0.24 });
+        Run      = AnimationTrack.new(animAssets.Run      or {}, { Speed = 1, Looped = true,  FadeInTime = 0.18, FadeOutTime = 0.22 });
+        Jump     = AnimationTrack.new(animAssets.Jump     or {}, { Speed = 1, Looped = false, FadeInTime = 0.08, FadeOutTime = 0.16 });
+        Fall     = AnimationTrack.new(animAssets.Fall     or {}, { Speed = 1, Looped = true,  FadeInTime = 0.14, FadeOutTime = 0.18 });
+        Land     = AnimationTrack.new(animAssets.Land     or {}, { Speed = 1, Looped = false, FadeInTime = 0.08, FadeOutTime = 0.16 });
+        Climb    = AnimationTrack.new(animAssets.Climb    or {}, { Speed = 1, Looped = true,  FadeInTime = 0.18, FadeOutTime = 0.22 });
     }
 
     local jointMap, retarget = UniversalJointWriter.BuildJointMap(character)

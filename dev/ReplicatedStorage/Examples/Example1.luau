@@ -120,11 +120,11 @@ function module:Start(clientScript: LocalScript)
 
     -- Create animation tracks for each direction
     local animTracks = {
-        Idle = AnimationTrack.new(animAssets.Idle or {}, { Speed = 1, Loop = true }),
-        Forward = AnimationTrack.new(animAssets.WalkForward or {}, { Speed = 1, Loop = true }),
-        Right = AnimationTrack.new(animAssets.WalkRight or {}, { Speed = 1, Loop = true }),
-        Backward = AnimationTrack.new(animAssets.WalkBackward or {}, { Speed = 1, Loop = true }),
-        Left = AnimationTrack.new(animAssets.WalkLeft or {}, { Speed = 1, Loop = true }),
+        Idle = AnimationTrack.new(animAssets.Idle or {}, { Speed = 1, Looped = true }),
+        Forward = AnimationTrack.new(animAssets.WalkForward or {}, { Speed = 1, Looped = true }),
+        Right = AnimationTrack.new(animAssets.WalkRight or {}, { Speed = 1, Looped = true }),
+        Backward = AnimationTrack.new(animAssets.WalkBackward or {}, { Speed = 1, Looped = true }),
+        Left = AnimationTrack.new(animAssets.WalkLeft or {}, { Speed = 1, Looped = true }),
     }
 
     local jointMap, retarget = UniversalJointWriter.BuildJointMap(character)

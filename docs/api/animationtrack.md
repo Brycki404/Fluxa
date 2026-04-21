@@ -28,8 +28,7 @@ The object returned by `AnimationTrack.new`.
 | `Time` | `number` | Current playback time |
 | `TimePosition` | `number` | Alias for `Time` (Roblox compatibility) |
 | `Speed` | `number` | Playback speed multiplier |
-| `Loop` | `boolean` | Whether the track loops |
-| `Looped` | `boolean` | Alias for `Loop` (Roblox compatibility) |
+| `Looped` | `boolean` | Whether the track loops |
 | `IsPlaying` | `boolean` | True while the track is active |
 | `Weight` | `number` | Current blend weight (smoothed by fade envelopes) |
 | `FadeInTime` | `number` | Fade-in duration in seconds |
@@ -60,7 +59,7 @@ Creates a new `AnimationTrackInstance`.
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
 | `Speed` | `number` | `1` | Playback speed multiplier |
-| `Loop` | `boolean` | `false` | Whether the track loops |
+| `Looped` | `boolean` | `false` | Whether the track loops |
 | `FadeInTime` | `number` | `0` | Default fade-in duration |
 | `FadeOutTime` | `number` | `0` | Default fade-out duration |
 | `Weight` | `number` | `1` | Initial target weight |

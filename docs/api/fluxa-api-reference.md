@@ -141,7 +141,7 @@ local Pose = Fluxa.Pose
 local UniversalJointWriter = Fluxa.UniversalJointWriter
 
 local asset = AnimationAsset.new(keyframeSequence, "Walk")
-local track  = AnimationTrack.new(asset, { Speed = 1, Loop = true })
+local track  = AnimationTrack.new(asset, { Speed = 1, Looped = true })
 local jointMap, retarget = UniversalJointWriter.BuildJointMap(character)
 
 track:Play()
