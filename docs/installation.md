@@ -6,8 +6,10 @@ Add Fluxa to your `wally.toml` dependencies:
 
 ```toml
 [dependencies]
-fluxa = "brycki404/fluxa@4.0.0"
+fluxa = "brycki404/fluxa@MAJOR.MINOR.PATCH"
 ```
+You can get the `MAJOR.MINOR.PATCH` [SemVer](https://semver.org/) version from here [Wally](https://wally.run/package/brycki404/fluxa)
+
 
 Then run:
 

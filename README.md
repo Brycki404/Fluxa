@@ -15,8 +15,7 @@ Additional examples will be created for every feature in future updates.
 
 ## Getting Started
 **For Rojo + Wally users**
-Add this to your wally.toml:
->`fluxa = "brycki404/fluxa@4.0.0"`
+Add the latest version to your wally.toml from here [Wally](https://wally.run/package/brycki404/fluxa)
 
 **For Studio users**
 Open the Uncopylocked Studio here to get the most up-to-date fluxa module: https://www.roblox.com/games/107928648886650/Fluxa-Dev
