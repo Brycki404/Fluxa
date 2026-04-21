@@ -541,7 +541,7 @@ local function createFluxaController(character: Model, assets, isLocalController
 	controller:AddTrack("Jump", assets.Jump or {}, {
 		Layer = "Base",
 		AutoManage = false,
-		IsOneShot = true,
+		Looped = false,
 		ReplicationSeekMode = "Never",
 		TrackOptions = { Loop = false, Speed = 1, FadeInTime = 0.08, FadeOutTime = 0.16 },
 	})
@@ -553,7 +553,7 @@ local function createFluxaController(character: Model, assets, isLocalController
 	landTrack = controller:AddTrack("Land", assets.Land or {}, {
 		Layer = "Landing",
 		AutoManage = false,
-		IsOneShot = true,
+		Looped = false,
 		ReplicationSeekMode = "Never",
 		TrackOptions = { Loop = false, Speed = 1, FadeInTime = 0.08, FadeOutTime = 0.08 },
 	})
@@ -565,7 +565,7 @@ local function createFluxaController(character: Model, assets, isLocalController
 	attackTrack = controller:AddTrack("Attack", assets.Attack or assets.Jump or {}, {
 		Layer = "UpperBody",
 		AutoManage = false,
-		IsOneShot = true,
+		Looped = false,
 		InitialWeight = 0,
 		ReplicationSeekMode = "Never",
 		TrackOptions = { Loop = false, Speed = 1, FadeInTime = 0.08, FadeOutTime = 0.14 },

@@ -80,6 +80,6 @@ All blend weights pass through a per-name smoothing accumulator before being app
 * No replication: the output only exists on the local client.
 * Manual weight math: adding a new state requires editing the weight block in the render loop.
 
-### Suggested positioning statement
+### Summarizing statement
 
 > Example 2 is a complete local animation controller built without `FluxaController`. It shows how to implement momentum, air states, phase-synced locomotion, and turn lean using only the raw Fluxa API. It is the right reference for single-player experiences or projects where replication and layer composition are not a requirement.

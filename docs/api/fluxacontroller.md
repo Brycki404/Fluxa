@@ -23,13 +23,13 @@ Passed as values in the `Tracks` table when constructing a controller.
 |-------|------|---------|-------------|
 | `Asset` | `AnimationAssetInstance` | required | Animation asset |
 | `Layer` | `string` | `"Base"` | Layer this track belongs to |
-| `IsOneShot` | `boolean` | `false` | If true, stops after one play |
+| `Looped` | `boolean` | `true` | If false, plays once and stops |
 | `AutoManage` | `boolean` | `true` | Controller auto-plays/stops based on weight |
 | `FadeInTime` | `number` | `0` | Default fade-in duration |
 | `FadeOutTime` | `number` | `0` | Default fade-out duration |
 | `Speed` | `number` | `1` | Playback speed |
 | `Loop` | `boolean` | `true` | Whether the clip loops |
-| `ReplicationSeekMode` | `string?` | `nil` | `"LoopingOnly"` or `"Never"` |
+| `ReplicationSeekMode` | `string?` | `nil` | `"Always"`, `"LoopingOnly"`, or `"Never"` |
 
 #### `LayerConfig`
 
@@ -75,7 +75,7 @@ local controller = FluxaController.new({
     },
     Tracks = {
         Idle = { Asset = assets.Idle, Layer = "Base", Loop = true },
-        Land = { Asset = assets.Land, Layer = "Landing", IsOneShot = true, ReplicationSeekMode = "Never" },
+        Land = { Asset = assets.Land, Layer = "Landing", Looped = false, ReplicationSeekMode = "Never" },
     },
 })
 controller:Start()
@@ -133,7 +133,7 @@ controller:SetLayerDriver("Base", "Speed", humanoidRootPart.AssemblyLinearVeloci
 
 #### `controller:MarkLayerAnimationStart(layerName, trackName)`
 
-Marks the start of a one-shot animation in a layer. Used to synchronize Landing-style overlay layers with the underlying one-shot timing.
+Marks the start of a non-looped animation in a layer. Used to synchronize Landing-style overlay layers with the underlying timing.
 
 ### Track methods
 
@@ -284,6 +284,6 @@ end
 
 * Tracks assigned to non-existent layers are silently dropped. Always define layers before registering tracks that reference them.
 * Blend tree functions are resolved in layer order (by `Order` value, ascending). Lower-order layers blend first.
-* One-shot tracks (`IsOneShot = true`) stop automatically after playing once. Their weight fades out at the track's `FadeOutTime`.
+* Non-looped tracks (`Looped = false`) stop automatically after playing once. Their weight fades out at the track's `FadeOutTime`.
 * `AutoManage = true` tracks are played and stopped automatically when their blend-tree-computed weight becomes nonzero or returns to zero. `AutoManage = false` tracks are only played or stopped via explicit `:Play` and `:StopTrack` calls.
 * `FluxaController` creates one `UniversalJointWriter.BuildJointMap` per controller. If the character's joint hierarchy changes after construction (unlikely at runtime), you may need to recreate the controller.

@@ -76,10 +76,10 @@ local controller = FluxaController.new({
         Landing = { Weight = 0, Order = 1 },
     },
     Tracks = {
-        Idle  = { Asset = assets.Idle,  Layer = "Base",    AutoManage = true,  IsOneShot = false },
-        Walk  = { Asset = assets.Walk,  Layer = "Base",    AutoManage = true,  IsOneShot = false },
-        Run   = { Asset = assets.Run,   Layer = "Base",    AutoManage = true,  IsOneShot = false },
-        Land  = { Asset = assets.Land,  Layer = "Landing", AutoManage = false, IsOneShot = true, ReplicationSeekMode = "Never" },
+        Idle  = { Asset = assets.Idle,  Layer = "Base",    AutoManage = true,  Looped = true },
+        Walk  = { Asset = assets.Walk,  Layer = "Base",    AutoManage = true,  Looped = true },
+        Run   = { Asset = assets.Run,   Layer = "Base",    AutoManage = true,  Looped = true },
+        Land  = { Asset = assets.Land,  Layer = "Landing", AutoManage = false, Looped = false, ReplicationSeekMode = "Never" },
     },
     BlendTrees = {
         Locomotion = function(ctrl, dt)

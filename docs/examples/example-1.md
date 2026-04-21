@@ -69,6 +69,6 @@ The X and Z blend axis weights are exposed as `Instance` Attributes on the clien
 * R6 only: the animation folder and retargeting are calibrated for a six-bone rig.
 * No layer composition: everything is blended in a single pass without priority or masking.
 
-### Suggested positioning statement
+### Summarizing statement
 
 > Example 1 shows the raw Fluxa building blocks with no framework overhead. It is a 2D directional walk blend implementation in about 200 lines: read input, compute weights, lerp poses, write joints. Everything is visible and explicit with nothing hidden. It is the right starting point for understanding what Fluxa actually does at the base level.

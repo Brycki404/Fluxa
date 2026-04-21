@@ -97,13 +97,14 @@ The `false` argument skips driver setup. The remote controller has the same trac
 
 Each track has a `ReplicationSeekMode` that controls how the remote playback handles the time position received from replication.
 
+* `Always` — always applies replicated time seeking, even for non-looped tracks. Use when strict phase sync matters more than local start-from-beginning behavior.
 * `LoopingOnly` — used for Idle, Walk, Run, SlowWalk, Fall, and Climb. Replication can seek their `Time` to stay synchronized.
-* `Never` — used for one-shot tracks Jump, Land, and Attack. One-shots should play from the start when triggered and run to completion. Setting `Never` means the remote controller respects the trigger event but never jumps the clip's time position based on network data.
+* `Never` — used for non-looped tracks like Jump, Land, and Attack when they should play from the start on trigger and run to completion locally.
 
 #### What is not replicated
 
 Drivers are not replicated. The local client's input state, camera direction, and movement context never leave the local machine. The replication payload is the controller's resulting track weights and playback positions, not the game logic that produced them.
 
-### Suggested positioning statement
+### Summarizing statement
 
 > Example 3 is a programmable animation graph approach. It is intentionally more complex than default Roblox animation controllers, but in exchange it gives us deterministic behavior, layered composition, and precise control over transitions, replication, and gameplay-coupled animation logic.

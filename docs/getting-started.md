@@ -62,6 +62,7 @@ Roblox's new Animation Graph System (currently in beta) is a visual authoring to
 In short:
 
 > Roblox's Graph Editor = visual authoring tool for animators
+
 > Fluxa = runtime animation engine for programmers
 
 They solve different problems and complement each other rather than overlap.

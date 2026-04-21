@@ -45,13 +45,14 @@ Each `TrackConfig` accepts a `ReplicationSeekMode` string:
 
 | Value | Behavior |
 |-------|----------|
+| `"Always"` | Remote controller always seeks this track's time position. Useful when non-looped and looping clips both need strict phase sync. |
 | `"LoopingOnly"` | Remote controller can seek this track's time position. Good for looping clips that should stay in sync. |
-| `"Never"` | Remote controller never seeks this track's time. Good for one-shots that should play from the beginning when triggered. |
+| `"Never"` | Remote controller never seeks this track's time. Good for non-looped clips that should play from the beginning when triggered. |
 
 ### What is replicated
 
 * Track weights (which tracks are active and at what weight)
-* Track time positions (for tracks with `ReplicationSeekMode = "LoopingOnly"`)
+* Track time positions (for tracks with `ReplicationSeekMode = "Always"` or `"LoopingOnly"`)
 * Layer weights
 
 ### What is not replicated
