@@ -6,7 +6,7 @@ Add Fluxa to your `wally.toml` dependencies:
 
 ```toml
 [dependencies]
-fluxa = "brycki404/fluxa@3.0.0"
+fluxa = "brycki404/fluxa@4.0.0"
 ```
 
 Then run:
