@@ -6,5 +6,3 @@ local Fluxa = require(ReplicatedStorage.Packages.fluxa)
 
 -- Requiring the service on server activates packet relay wiring.
 local _replicationService = Fluxa.FluxaReplicationService
-
-return _replicationService

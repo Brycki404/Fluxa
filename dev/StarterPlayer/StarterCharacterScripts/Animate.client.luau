@@ -1,1 +1,1 @@
---Absolutely nothing, overrides default animations
+--Absolutely nothing, overrides default Animate script
