@@ -37,6 +37,13 @@ UniversalJointWriter ← writes PoseData to rig Motor6Ds / Bones / AnimationCons
 
 `FluxaReplicationService` sits alongside this stack, serializing the controller's layer state and routing it to remote controllers on other clients.
 
+Replication controls:
+
+* Per-track start replication: `TrackConfig.AutoReplicate`, `SetTrackAutoReplicate(...)`
+* Per-global-driver replication: `SetGlobalDriverReplication(...)`
+* Per-layer-driver replication: `SetLayerDriverReplication(...)`
+* Up-front defaults in `FluxaController.new`: `GlobalDriverReplication` and `LayerDriverReplication`
+
 ### Which modules each example uses
 
 | Module | Example 1 | Example 2 | Example 3 |
@@ -79,7 +86,21 @@ local controller = FluxaController.new({
         Idle  = { Asset = assets.Idle,  Layer = "Base",    AutoManage = true,  Looped = true },
         Walk  = { Asset = assets.Walk,  Layer = "Base",    AutoManage = true,  Looped = true },
         Run   = { Asset = assets.Run,   Layer = "Base",    AutoManage = true,  Looped = true },
-        Land  = { Asset = assets.Land,  Layer = "Landing", AutoManage = false, Looped = false, ReplicationSeekMode = "Never" },
+        Land  = { Asset = assets.Land,  Layer = "Landing", AutoManage = false, Looped = false, AutoReplicate = true, ReplicationSeekMode = "Never" },
+    },
+    GlobalDriverReplication = {
+        Speed = true,
+        MoveDir = true,
+        DebugOverlay = false,
+    },
+    LayerDriverReplication = {
+        Base = {
+            Speed = true,
+            MoveDir = true,
+        },
+        Landing = {
+            LocalOnlyDebug = false,
+        },
     },
     BlendTrees = {
         Locomotion = function(ctrl, dt)
@@ -105,10 +126,11 @@ controller:Start()
 humanoid.StateChanged:Connect(function(_old, new)
     if new == Enum.HumanoidStateType.Landed then
         controller:Play("Land")
-        controller:MarkLayerAnimationStart("Landing", "Land")
     end
 end)
 ```
+
+`MarkLayerAnimationStart(...)` is still available for explicit/manual starts, but tracks with `AutoReplicate = true` do not require it after `Play(...)`.
 
 ### Quick start: raw API (Example 1/2 pattern)
 

@@ -101,9 +101,15 @@ Each track has a `ReplicationSeekMode` that controls how the remote playback han
 * `LoopingOnly` — used for Idle, Walk, Run, SlowWalk, Fall, and Climb. Replication can seek their `Time` to stay synchronized.
 * `Never` — used for non-looped tracks like Jump, Land, and Attack when they should play from the start on trigger and run to completion locally.
 
-#### What is not replicated
+#### Driver replication policy
 
-Drivers are not replicated. The local client's input state, camera direction, and movement context never leave the local machine. The replication payload is the controller's resulting track weights and playback positions, not the game logic that produced them.
+Driver replication is configurable per driver.
+
+* Global drivers default to replicate, and can be disabled with `SetGlobalDriverReplication(key, false)`.
+* Layer drivers default to replicate, and can be disabled with `SetLayerDriverReplication(layerName, key, false)`.
+* You can set both defaults up front in `FluxaController.new(...)` using `GlobalDriverReplication` and `LayerDriverReplication`.
+
+This lets you keep gameplay-relevant parameters synchronized while leaving debug/local-only drivers private.
 
 ### Summarizing statement
 

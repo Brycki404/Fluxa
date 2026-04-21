@@ -93,7 +93,16 @@ local function ensureClientReceiver()
 		return
 	end
 
-	-- Reconnect after character-script teardown (e.g. respawn) if the old connection is dead.
+	-- Guarding on `.Connected` (not just presence of the value) is the
+	-- key fix for cross-respawn replication: when the FIRST caller of
+	-- ensureClientReceiver was a per-character LocalScript (Animate in
+	-- StarterCharacterScripts), Roblox auto-disconnects the
+	-- OnClientEvent binding when that script is torn down on death.
+	-- The module variable still held the now-dead connection object,
+	-- so the old truthy check blocked the reconnect and packets piled
+	-- up in the RemoteEvent queue until the warning fired.  Reading
+	-- .Connected means we reconnect transparently if the previous one
+	-- has been invalidated.
 	if _clientConnection and _clientConnection.Connected then
 		return
 	end
@@ -171,10 +180,23 @@ function ReplicationService.SetLocalReplicationEnabled(enabled)
 	_localReplicationEnabled = enabled == true
 end
 
+-- Public handle so a persistent client script (RemoteAnimate in
+-- StarterPlayerScripts) can bind the OnClientEvent receiver at session
+-- start instead of leaving it to whichever caller happens to hit
+-- StartLocalReplication / StartRemoteReplication first.  The connection
+-- is lifetime-bound to the script that calls Connect, so pinning it to
+-- a persistent script means it survives every character respawn.
 function ReplicationService.EnsureClientReceiver()
 	ensureClientReceiver()
 end
 
+-- Tear down the local send loop and drop our reference to the owning
+-- controller.  Call from the owning client's character-death hook
+-- BEFORE destroying the controller -- otherwise the Heartbeat loop
+-- keeps calling GetReplicationPacket on a destroyed controller whose
+-- Layers table has been cleared, which fan-outs empty packets to peers
+-- for the full death->respawn interval.  A subsequent respawn just
+-- calls StartLocalReplication again with the fresh controller.
 function ReplicationService.StopLocalReplication()
 	if _sendConnection then
 		_sendConnection:Disconnect()
@@ -197,6 +219,11 @@ function ReplicationService.StartRemoteReplication(controller, player)
 	end
 end
 
+-- Drop the controller reference for a remote player whose character has
+-- been removed (death / leave).  Without this the destroyed peer
+-- controller stays registered in _remoteControllers until a fresh
+-- spawn overwrites it, so any packets that arrive during the respawn
+-- gap get applied to a stale Layers table on a dead controller.
 function ReplicationService.ClearRemoteController(player)
 	if player == nil then
 		return

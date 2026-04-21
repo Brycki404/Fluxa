@@ -22,13 +22,13 @@ Passed as values in the `Tracks` table when constructing a controller.
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
 | `Asset` | `AnimationAssetInstance` | required | Animation asset |
+| `TrackOptions` | `{[string]: any}?` | `nil` | Options passed directly to `AnimationTrack.new` |
+| `PlayerOptions` | `{[string]: any}?` | `nil` | Legacy alias for `TrackOptions` |
 | `Layer` | `string` | `"Base"` | Layer this track belongs to |
 | `Looped` | `boolean` | `true` | If false, plays once and stops |
 | `AutoManage` | `boolean` | `true` | Controller auto-plays/stops based on weight |
-| `FadeInTime` | `number` | `0` | Default fade-in duration |
-| `FadeOutTime` | `number` | `0` | Default fade-out duration |
-| `Speed` | `number` | `1` | Playback speed |
-| `Loop` | `boolean` | `true` | Whether the clip loops |
+| `AutoReplicate` | `boolean` | `false` | If true, starting this track auto-emits replication start markers |
+| `InitialWeight` | `number` | `0` | Initial target weight for this track |
 | `ReplicationSeekMode` | `string?` | `nil` | `"Always"`, `"LoopingOnly"`, or `"Never"` |
 
 #### `LayerConfig`
@@ -52,6 +52,12 @@ Passed to `FluxaController.new`.
 | `Layers` | `{[string]: LayerConfig}` | Named layer definitions |
 | `Tracks` | `{[string]: TrackConfig}` | Named track definitions |
 | `BlendTrees` | `{[string]: BlendTreeFn}?` | Named blend tree functions |
+| `AutoStart` | `boolean?` | Starts the internal step loop immediately |
+| `WeightSmoothingSpeed` | `number?` | Smoothing speed for weight interpolation |
+| `ReplicationSeekMode` | `"Always"\|"LoopingOnly"\|"Never"?` | Default seek mode for tracks that do not override it |
+| `Drivers` / `Params` | `{[string]: any}?` | Initial global drivers (`Params` is legacy alias) |
+| `GlobalDriverReplication` | `{[string]: boolean}?` | Up-front per-global-driver replication flags |
+| `LayerDriverReplication` | `{[string]: {[string]: boolean}}?` | Up-front per-layer-driver replication flags |
 | `OnPreStep` | `function?` | Called before blend resolution each frame |
 | `OnPostBlend` | `function?` | Called after blend, before joint write |
 | `AutoApplyPose` | `boolean?` | Auto-write pose each step (default `true`) |
@@ -74,8 +80,18 @@ local controller = FluxaController.new({
         Landing = { Weight = 0, Order = 1 },
     },
     Tracks = {
-        Idle = { Asset = assets.Idle, Layer = "Base", Loop = true },
-        Land = { Asset = assets.Land, Layer = "Landing", Looped = false, ReplicationSeekMode = "Never" },
+        Idle = { Asset = assets.Idle, Layer = "Base", TrackOptions = { Loop = true } },
+        Land = { Asset = assets.Land, Layer = "Landing", Looped = false, AutoReplicate = true, ReplicationSeekMode = "Never" },
+    },
+    GlobalDriverReplication = {
+        Speed = true,
+        DebugOnly = false,
+    },
+    LayerDriverReplication = {
+        Base = {
+            MoveDir = true,
+            LocalLean = false,
+        },
     },
 })
 controller:Start()
@@ -131,23 +147,37 @@ Sets or reads a named driver value on a layer. Blend tree functions read driver 
 controller:SetLayerDriver("Base", "Speed", humanoidRootPart.AssemblyLinearVelocity.Magnitude)
 ```
 
+#### `controller:SetLayerDriverReplication(layerName, key, enabled)` / `controller:GetLayerDriverReplication(layerName, key)`
+
+Enables or disables replication per layer driver.
+
+Defaults to `true` (replicate) unless explicitly set to `false`.
+
 #### `controller:MarkLayerAnimationStart(layerName, trackName)`
 
-Marks the start of a non-looped animation in a layer. Used to synchronize Landing-style overlay layers with the underlying timing.
+Manually marks the start of an animation in a layer for replication.
+
+Use this for manual or one-off triggers. For per-track automatic behavior, prefer `TrackConfig.AutoReplicate = true` (or `SetTrackAutoReplicate`).
 
 ### Track methods
 
-#### `controller:AddTrack(name, config)`
+#### `controller:AddTrack(name, asset, config?)`
 
 Adds a new track at runtime.
 
 #### `controller:RemoveTrack(name)`
 
-Removes a track by name and destroys the underlying `AnimationTrack`.
+Removes a track by name and stops it if currently playing.
 
 #### `controller:SetTrackLayer(trackName, layerName)`
 
 Reassigns a track to a different layer.
+
+#### `controller:SetTrackAutoReplicate(trackName, enabled)` / `controller:GetTrackAutoReplicate(trackName)`
+
+Enables or disables automatic animation-start replication for a track.
+
+When enabled, any start through `Play(...)` or `AutoManage` start automatically records a replication start marker.
 
 #### `controller:SetTrackWeight(trackName, weight)` / `controller:GetTrackWeight(trackName)`
 
@@ -200,13 +230,13 @@ Plays a named track with an optional fade-in time. Resets the track's time posit
 | `trackName` | `string` | required | Track name |
 | `fadeInTime` | `number?` | track default | Fade-in duration in seconds |
 
-#### `controller:StopTrack(trackName, fadeOutTime?)`
+#### `controller:Stop(trackName, fadeOutTime?)`
 
 Stops a named track with an optional fade-out time.
 
-#### `controller:Stop(trackName?)`
+#### `controller:StopAll(fadeOutTime?)`
 
-Stops a specific track by name, or stops all tracks if no name is provided.
+Stops all registered tracks.
 
 ### Blend tree methods
 
@@ -233,6 +263,12 @@ Sets or reads a global driver value accessible from all blend tree functions.
 controller:SetGlobalDriver("AimPitch", camera.CFrame.LookVector.Y)
 ```
 
+#### `controller:SetGlobalDriverReplication(key, enabled)` / `controller:GetGlobalDriverReplication(key)`
+
+Enables or disables replication per global driver.
+
+Defaults to `true` (replicate) unless explicitly set to `false`.
+
 ### Lifecycle methods
 
 #### `controller:Step(dt)`
@@ -257,7 +293,13 @@ Stops all tracks, disconnects all signals and connections, and cleans up the con
 
 #### `controller:GetReplicationPacket()`
 
-Returns a serializable table representing the current layer and track state. Used by `FluxaReplicationService` to send state to remote clients.
+Returns a serializable table representing replication state.
+
+Includes:
+
+* Global drivers filtered by `GlobalDriverReplication`
+* Layer drivers filtered by `LayerDriverReplication`
+* Recent animation-start markers for each layer
 
 Returns: `table`
 
@@ -285,5 +327,7 @@ end
 * Tracks assigned to non-existent layers are silently dropped. Always define layers before registering tracks that reference them.
 * Blend tree functions are resolved in layer order (by `Order` value, ascending). Lower-order layers blend first.
 * Non-looped tracks (`Looped = false`) stop automatically after playing once. Their weight fades out at the track's `FadeOutTime`.
-* `AutoManage = true` tracks are played and stopped automatically when their blend-tree-computed weight becomes nonzero or returns to zero. `AutoManage = false` tracks are only played or stopped via explicit `:Play` and `:StopTrack` calls.
+* `AutoManage = true` tracks are played and stopped automatically when their blend-tree-computed weight becomes nonzero or returns to zero. `AutoManage = false` tracks are only played or stopped via explicit `:Play` and `:Stop` calls.
+* Driver replication is opt-out per driver (default `true`) and can be configured up front with `GlobalDriverReplication` and `LayerDriverReplication`.
+* Track start replication is opt-in per track (`AutoReplicate = true`) or manual through `MarkLayerAnimationStart`.
 * `FluxaController` creates one `UniversalJointWriter.BuildJointMap` per controller. If the character's joint hierarchy changes after construction (unlikely at runtime), you may need to recreate the controller.

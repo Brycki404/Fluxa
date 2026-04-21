@@ -80,12 +80,14 @@ controller:SetGlobalDriver("Direction", Vector3.new(1, 0, 0))
 - `SetLayerBlendMode(layerName, blendMode)`
 - `SetLayerMask(layerName, jointMask)`
 - `SetLayerDriver(layerName, key, value)` / `GetLayerDriver(layerName, key)`
+- `SetLayerDriverReplication(layerName, key, enabled)` / `GetLayerDriverReplication(layerName, key)`
 - `MarkLayerAnimationStart(layerName, trackName)`
 
 **Track methods**
 - `AddTrack(trackName, config)`
 - `RemoveTrack(trackName)`
 - `SetTrackLayer(trackName, layerName)`
+- `SetTrackAutoReplicate(trackName, enabled)` / `GetTrackAutoReplicate(trackName)`
 - `SetTrackWeight(trackName, weight)` / `GetTrackWeight(trackName)`
 - `GetTrack(name)` — returns the `AnimationTrackInstance` for a named track, or `nil`
 - `GetPlayingTracks()` — returns all tracks with `Weight > 0` in registration order
@@ -96,16 +98,22 @@ controller:SetGlobalDriver("Direction", Vector3.new(1, 0, 0))
 
 **Playback methods**
 - `Play(trackName, fadeInTime?)`
-- `StopTrack(trackName, fadeOutTime?)`
-- `Stop(trackName?)`
+- `Stop(trackName, fadeOutTime?)`
+- `StopAll(fadeOutTime?)`
 
 **Driver methods**
 - `SetGlobalDriver(key, value)` / `GetGlobalDriver(key)`
-- `SetLayerDriver(layerName, key, value)` / `GetLayerDriver(layerName, key)`
+- `SetGlobalDriverReplication(key, enabled)` / `GetGlobalDriverReplication(key)`
 
 **Replication methods**
 - `GetReplicationPacket()`
 - `ApplyReplicationPacket(packet)`
+
+### Replication controls
+- Per-track animation-start replication: `AutoReplicate` in `TrackConfig`.
+- Per-driver replication filters:
+	- `GlobalDriverReplication` / `SetGlobalDriverReplication`
+	- `LayerDriverReplication` / `SetLayerDriverReplication`
 
 **Lifecycle**
 - `Step(dt)` / `Start()` / `StopLoop()` / `Destroy()`

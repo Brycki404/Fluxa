@@ -22,9 +22,6 @@ type LayerReplicationState = {
 	Drivers: {[string]: any},
 	AnimationStartTimes: {[string]: number},
 }
-
-type DriverReplicationMap = {[string]: boolean}
-type LayerDriverReplicationMap = {[string]: DriverReplicationMap}
 type ReplicationPacket = {
 	Timestamp: number,
 	Drivers: {[string]: any}?,
@@ -48,8 +45,7 @@ export type TrackConfig = {
 	PlayerOptions: {[string]: any}?,
 	Layer: string?,
 	AutoManage: boolean?,
-	AutoReplicate: boolean?,
-	Looped: boolean?,
+	IsOneShot: boolean?,
 	InitialWeight: number?,
 	ReplicationSeekMode: ReplicationSeekMode?,
 }
@@ -62,8 +58,6 @@ export type NewOptions = {
 	ReplicationSeekMode: ReplicationSeekMode?,
 	Drivers: AnyMap?,
 	Params: AnyMap?,
-	GlobalDriverReplication: DriverReplicationMap?,
-	LayerDriverReplication: LayerDriverReplicationMap?,
 	Layers: {[string]: LayerConfig}?,
 	Tracks: {[string]: TrackConfig}?,
 	BlendTrees: {[string]: BlendTreeResolver}?,
@@ -84,8 +78,7 @@ type TrackState = {
 	Layer: string,
 	Track: any,
 	AutoManage: boolean,
-	AutoReplicate: boolean,
-	Looped: boolean,
+	IsOneShot: boolean,
 	ReplicationSeekMode: ReplicationSeekMode,
 }
 
@@ -104,8 +97,6 @@ export type ControllerInstance = {
 	SetLayerMask: (self: ControllerInstance, name: string, mask: JointMaskInput?) -> (),
 	SetLayerDriver: (self: ControllerInstance, layerName: string, paramName: string, value: any) -> (),
 	GetLayerDriver: (self: ControllerInstance, layerName: string, paramName: string, fallbackToGlobal: boolean?) -> any,
-	SetLayerDriverReplication: (self: ControllerInstance, layerName: string, paramName: string, enabled: boolean) -> (),
-	GetLayerDriverReplication: (self: ControllerInstance, layerName: string, paramName: string) -> boolean,
 	MarkLayerAnimationStart: (self: ControllerInstance, layerName: string, animationName: string) -> number,
 	GetReplicationPacket: (self: ControllerInstance) -> ReplicationPacket,
 	ApplyReplicationPacket: (self: ControllerInstance, packet: ReplicationPacket) -> (),
@@ -113,12 +104,8 @@ export type ControllerInstance = {
 	AddTrack: (self: ControllerInstance, name: string, asset: any, config: TrackConfig?) -> any,
 	RemoveTrack: (self: ControllerInstance, name: string) -> (),
 	SetTrackLayer: (self: ControllerInstance, name: string, layerName: string) -> (),
-	SetTrackAutoReplicate: (self: ControllerInstance, name: string, enabled: boolean) -> (),
-	GetTrackAutoReplicate: (self: ControllerInstance, name: string) -> boolean,
 	SetTrackWeight: (self: ControllerInstance, name: string, weight: number) -> (),
 	GetTrackWeight: (self: ControllerInstance, name: string) -> number,
-	GetTrack: (self: ControllerInstance, name: string) -> any?,
-	GetPlayingTracks: (self: ControllerInstance) -> { any },
 
 	CreateBlendTree: (self: ControllerInstance, name: string, resolver: BlendTreeResolver) -> (),
 	RemoveBlendTree: (self: ControllerInstance, name: string) -> (),
@@ -128,8 +115,6 @@ export type ControllerInstance = {
 	SetBlend: (self: ControllerInstance, key: string, value: any) -> (),
 	SetDriver: (self: ControllerInstance, key: string, value: any) -> (),
 	GetDriver: (self: ControllerInstance, key: string) -> any,
-	SetGlobalDriverReplication: (self: ControllerInstance, key: string, enabled: boolean) -> (),
-	GetGlobalDriverReplication: (self: ControllerInstance, key: string) -> boolean,
 
 	Play: (self: ControllerInstance, trackName: string, fadeInTime: number?) -> (),
 	StopTrack: (self: ControllerInstance, trackName: string, fadeOutTime: number?) -> (),
@@ -152,8 +137,6 @@ export type ControllerInstance = {
 	_defaultReplicationSeekMode: ReplicationSeekMode,
 	_appliedReplicationAnimationStartTimes: {[string]: {[string]: number}},
 	_drivers: AnyMap,
-	_globalDriverReplication: DriverReplicationMap,
-	_layerDriverReplication: LayerDriverReplicationMap,
 	_jointMap: {[string]: any},
 	_retarget: {[string]: string},
 	_updateConnection: RBXScriptConnection?,
@@ -265,50 +248,6 @@ local function collectRecentAnimationStartTimes(animationStartTimes: {[string]: 
 	return recentAnimationStartTimes
 end
 
-local function collectReplicatedDrivers(drivers: AnyMap, replicationMap: DriverReplicationMap): AnyMap
-	local replicated: AnyMap = {}
-	for key, value in pairs(drivers) do
-		if replicationMap[key] ~= false then
-			replicated[key] = value
-		end
-	end
-	return replicated
-end
-
-local function cloneLayerDriverReplicationMap(map: LayerDriverReplicationMap?): LayerDriverReplicationMap
-	local cloned: LayerDriverReplicationMap = {}
-	if map == nil then
-		return cloned
-	end
-
-	for layerName, driverMap in pairs(map) do
-		cloned[layerName] = table.clone(driverMap)
-	end
-
-	return cloned
-end
-
-local function shouldTrackAutoReplicate(trackState: TrackState): boolean
-	if trackState.AutoReplicate then
-		return true
-	end
-
-	local track = trackState.Track
-	if track ~= nil and (track :: any).AutoReplicate == true then
-		return true
-	end
-
-	return false
-end
-
-local function beginTrackPlayback(controller: ControllerInstance, trackName: string, trackState: TrackState, fadeInTime: number?)
-	if shouldTrackAutoReplicate(trackState) then
-		controller:MarkLayerAnimationStart(trackState.Layer, trackName)
-	end
-
-	trackState.Track:Play(fadeInTime)
-end
-
 local function blendPoseOverride(target: PoseData, incoming: PoseData, weight: number, mask: JointMask?)
 	if weight <= 0 then
 		return
@@ -355,12 +294,12 @@ end
 local function blendLayerTracksIntoPose(controller: ControllerInstance, finalPose: PoseData, layerName: string, layer: LayerState, dt: number)
 	for _, trackName in ipairs(controller._trackNames) do
 		local track = controller._tracks[trackName]
-		if track.Layer ~= layerName or not track.Track.IsPlaying then
+		if track.Layer ~= layerName or not track.Track.Playing then
 			continue
 		end
 
 		local logicalWeight = controller._smoothedTrackWeights[trackName] or 0
-		local effectiveWeight = if logicalWeight > 0 then logicalWeight * track.Track.Weight else track.Track.Weight
+		local effectiveWeight = logicalWeight * track.Track.Weight
 		-- Always update to advance fade weight and animation time, even if we won't blend this frame.
 		local sample = track.Track:Update(dt)
 		local combinedWeight = clamp01(effectiveWeight * layer.Weight)
@@ -421,13 +360,6 @@ function FluxaController.new(options: NewOptions): ControllerInstance
 	self._defaultReplicationSeekMode = normalizeReplicationSeekMode(options.ReplicationSeekMode)
 	self._appliedReplicationAnimationStartTimes = {}
 	self._drivers = table.clone(options.Drivers or options.Params or {})
-	self._globalDriverReplication = table.clone(options.GlobalDriverReplication or {})
-	self._layerDriverReplication = cloneLayerDriverReplicationMap(options.LayerDriverReplication)
-	for key in pairs(self._drivers) do
-		if self._globalDriverReplication[key] == nil then
-			self._globalDriverReplication[key] = true
-		end
-	end
 	self.Layers = {}
 	self._jointMap, self._retarget = UniversalJointWriter.BuildJointMap(self.Character)
 	self._updateConnection = nil
@@ -472,9 +404,6 @@ function FluxaController.AddLayer(self: ControllerInstance, name: string, config
 	if self.Layers[name] == nil then
 		self.Layers[name] = createDefaultLayerReplicationState()
 	end
-	if self._layerDriverReplication[name] == nil then
-		self._layerDriverReplication[name] = {}
-	end
 
 	if not hasKey(self._layerNames, name) then
 		table.insert(self._layerNames, name)
@@ -489,7 +418,6 @@ function FluxaController.RemoveLayer(self: ControllerInstance, name: string)
 
 	self._layers[name] = nil
 	self.Layers[name] = nil
-	self._layerDriverReplication[name] = nil
 	removeKey(self._layerNames, name)
 
 	for _, track in pairs(self._tracks) do
@@ -535,14 +463,6 @@ function FluxaController.SetLayerDriver(self: ControllerInstance, layerName: str
 	end
 
 	layerState.Drivers[paramName] = value
-	local replicationMap = self._layerDriverReplication[layerName]
-	if replicationMap == nil then
-		replicationMap = {}
-		self._layerDriverReplication[layerName] = replicationMap
-	end
-	if replicationMap[paramName] == nil then
-		replicationMap[paramName] = true
-	end
 end
 
 function FluxaController.GetLayerDriver(self: ControllerInstance, layerName: string, paramName: string, fallbackToGlobal: boolean?)
@@ -559,29 +479,6 @@ function FluxaController.GetLayerDriver(self: ControllerInstance, layerName: str
 	end
 
 	return nil
-end
-
-function FluxaController.SetLayerDriverReplication(self: ControllerInstance, layerName: string, paramName: string, enabled: boolean)
-	if self._layers[layerName] == nil then
-		self:AddLayer(layerName, nil)
-	end
-
-	local replicationMap = self._layerDriverReplication[layerName]
-	if replicationMap == nil then
-		replicationMap = {}
-		self._layerDriverReplication[layerName] = replicationMap
-	end
-
-	replicationMap[paramName] = enabled == true
-end
-
-function FluxaController.GetLayerDriverReplication(self: ControllerInstance, layerName: string, paramName: string): boolean
-	local replicationMap = self._layerDriverReplication[layerName]
-	if replicationMap == nil then
-		return true
-	end
-
-	return replicationMap[paramName] ~= false
 end
 
 function FluxaController.MarkLayerAnimationStart(self: ControllerInstance, layerName: string, animationName: string): number
@@ -605,14 +502,13 @@ function FluxaController.GetReplicationPacket(self: ControllerInstance): Replica
 	local layers: {[string]: LayerReplicationState} = {}
 	for layerName, layerState in pairs(self.Layers) do
 		local clonedLayerState = cloneLayerReplicationState(layerState)
-		clonedLayerState.Drivers = collectReplicatedDrivers(layerState.Drivers, self._layerDriverReplication[layerName] or {})
 		clonedLayerState.AnimationStartTimes = collectRecentAnimationStartTimes(layerState.AnimationStartTimes, now)
 		layers[layerName] = clonedLayerState
 	end
 
 	return {
 		Timestamp = now,
-		Drivers = collectReplicatedDrivers(self._drivers, self._globalDriverReplication),
+		Drivers = table.clone(self._drivers),
 		Layers = layers,
 	}
 end
@@ -671,37 +567,23 @@ function FluxaController.ApplyReplicationPacket(self: ControllerInstance, packet
 				local trackState = self._tracks[animationName]
 				if trackState ~= nil then
 					local track = trackState.Track
-
-					if not trackState.Looped then
-						-- Always restart non-looped tracks from the beginning when a new start time arrives.
-						if track.IsPlaying then
-							track:Stop(0)
-						end
+					if not track.Playing then
 						track:Play(0)
+					end
+
+					local shouldSeekReplicationTime = false
+					if trackState.ReplicationSeekMode == "Always" then
+						shouldSeekReplicationTime = true
+					elseif trackState.ReplicationSeekMode == "LoopingOnly" then
+						shouldSeekReplicationTime = not trackState.IsOneShot
+					end
+
+					if shouldSeekReplicationTime then
+						local replicatedTime = math.max(0, now - startTime)
 						if (track :: any).TimePosition ~= nil then
-							(track :: any).TimePosition = 0
+							(track :: any).TimePosition = replicatedTime
 						elseif (track :: any).Time ~= nil then
-							(track :: any).Time = 0
-						end
-					else
-						if not track.IsPlaying then
-							track:Play(0)
-						end
-
-						local shouldSeekReplicationTime = false
-						if trackState.ReplicationSeekMode == "Always" then
-							shouldSeekReplicationTime = true
-						elseif trackState.ReplicationSeekMode == "LoopingOnly" then
-							shouldSeekReplicationTime = trackState.Looped
-						end
-
-						if shouldSeekReplicationTime then
-							local replicatedTime = math.max(0, now - startTime)
-							if (track :: any).TimePosition ~= nil then
-								(track :: any).TimePosition = replicatedTime
-							elseif (track :: any).Time ~= nil then
-								(track :: any).Time = replicatedTime
-							end
+							(track :: any).Time = replicatedTime
 						end
 					end
 				end
@@ -713,15 +595,10 @@ end
 function FluxaController.AddTrack(self: ControllerInstance, name: string, asset: any, config: TrackConfig?)
 	assert(asset ~= nil, "FluxaController:AddTrack requires animation asset")
 
-	local rawTrackOptions = if config and config.TrackOptions then config.TrackOptions else if config and config.PlayerOptions then config.PlayerOptions else nil
-	local trackOptions: {[string]: any} = if rawTrackOptions ~= nil then table.clone(rawTrackOptions) else {}
-	local looped = if config and config.Looped ~= nil then config.Looped else true
-	trackOptions.Looped = looped
-	trackOptions.Loop = looped
+	local trackOptions = if config and config.TrackOptions then config.TrackOptions else if config and config.PlayerOptions then config.PlayerOptions else nil
 	local track = AnimationTrack.new(asset, trackOptions)
 
 	local layerName = if config and config.Layer then config.Layer else "Base"
-	local autoReplicate = if config and config.AutoReplicate ~= nil then config.AutoReplicate else false
 	if self._layers[layerName] == nil then
 		self:AddLayer(layerName, nil)
 	end
@@ -731,14 +608,11 @@ function FluxaController.AddTrack(self: ControllerInstance, name: string, asset:
 		Layer = layerName,
 		Track = track,
 		AutoManage = if config and config.AutoManage ~= nil then config.AutoManage else true,
-		AutoReplicate = autoReplicate,
-		Looped = looped,
+		IsOneShot = if config and config.IsOneShot ~= nil then config.IsOneShot else false,
 		ReplicationSeekMode = if config and config.ReplicationSeekMode ~= nil
 			then normalizeReplicationSeekMode(config.ReplicationSeekMode)
 			else self._defaultReplicationSeekMode,
 	}
-	local trackInstance = track :: any
-	trackInstance.AutoReplicate = autoReplicate
 
 	if not hasKey(self._trackNames, name) then
 		table.insert(self._trackNames, name)
@@ -748,8 +622,8 @@ function FluxaController.AddTrack(self: ControllerInstance, name: string, asset:
 	self._trackTargets[name] = clamp01(initialWeight)
 	self._smoothedTrackWeights[name] = clamp01(initialWeight)
 
-	if self._tracks[name].AutoManage and self._trackTargets[name] > 0 and self._tracks[name].Looped then
-		beginTrackPlayback(self, name, self._tracks[name], track.FadeInTime)
+	if self._tracks[name].AutoManage and self._trackTargets[name] > 0 and not self._tracks[name].IsOneShot then
+		track:Play(track.FadeInTime)
 	end
 
 	return track
@@ -757,7 +631,7 @@ end
 
 function FluxaController.RemoveTrack(self: ControllerInstance, name: string)
 	local track = self._tracks[name]
-	if track and track.Track.IsPlaying then
+	if track and track.Track.Playing then
 		track.Track:Stop(0)
 	end
 
@@ -778,27 +652,6 @@ function FluxaController.SetTrackLayer(self: ControllerInstance, name: string, l
 	track.Layer = layerName
 end
 
-function FluxaController.SetTrackAutoReplicate(self: ControllerInstance, name: string, enabled: boolean)
-	local track = self._tracks[name]
-	if not track then
-		return
-	end
-
-	local value = enabled == true
-	track.AutoReplicate = value
-	local trackInstance = track.Track :: any
-	trackInstance.AutoReplicate = value
-end
-
-function FluxaController.GetTrackAutoReplicate(self: ControllerInstance, name: string): boolean
-	local track = self._tracks[name]
-	if not track then
-		return false
-	end
-
-	return shouldTrackAutoReplicate(track)
-end
-
 function FluxaController.SetTrackWeight(self: ControllerInstance, name: string, weight: number)
 	if self._tracks[name] == nil then
 		return
@@ -808,22 +661,6 @@ end
 
 function FluxaController.GetTrackWeight(self: ControllerInstance, name: string): number
 	return self._trackTargets[name] or 0
-end
-
-function FluxaController.GetTrack(self: ControllerInstance, name: string): any?
-	local state = self._tracks[name]
-	return if state then state.Track else nil
-end
-
-function FluxaController.GetPlayingTracks(self: ControllerInstance): { any }
-	local result = {}
-	for _, trackName in ipairs(self._trackNames) do
-		local state = self._tracks[trackName]
-		if state and state.Track.Weight > 0 then
-			table.insert(result, state.Track)
-		end
-	end
-	return result
 end
 
 function FluxaController.CreateBlendTree(self: ControllerInstance, name: string, resolver: BlendTreeResolver)
@@ -836,21 +673,10 @@ end
 
 function FluxaController.SetGlobalDriver(self: ControllerInstance, key: string, value: any)
 	self._drivers[key] = value
-	if self._globalDriverReplication[key] == nil then
-		self._globalDriverReplication[key] = true
-	end
 end
 
 function FluxaController.GetGlobalDriver(self: ControllerInstance, key: string)
 	return self._drivers[key]
-end
-
-function FluxaController.SetGlobalDriverReplication(self: ControllerInstance, key: string, enabled: boolean)
-	self._globalDriverReplication[key] = enabled == true
-end
-
-function FluxaController.GetGlobalDriverReplication(self: ControllerInstance, key: string): boolean
-	return self._globalDriverReplication[key] ~= false
 end
 
 function FluxaController.Play(self: ControllerInstance, trackName: string, fadeInTime: number?)
@@ -860,10 +686,10 @@ function FluxaController.Play(self: ControllerInstance, trackName: string, fadeI
 	end
 
 	self._trackTargets[trackName] = 1
-	beginTrackPlayback(self, trackName, track, fadeInTime)
+	track.Track:Play(fadeInTime)
 end
 
-function FluxaController.Stop(self: ControllerInstance, trackName: string, fadeOutTime: number?)
+function FluxaController.StopTrack(self: ControllerInstance, trackName: string, fadeOutTime: number?)
 	local track = self._tracks[trackName]
 	if not track then
 		return
@@ -873,9 +699,14 @@ function FluxaController.Stop(self: ControllerInstance, trackName: string, fadeO
 	track.Track:Stop(fadeOutTime)
 end
 
-function FluxaController.StopAll(self: ControllerInstance, fadeOutTime: number?)
+function FluxaController.Stop(self: ControllerInstance, trackName: string?, fadeOutTime: number?)
+	if trackName ~= nil then
+		self:StopTrack(trackName, fadeOutTime)
+		return
+	end
+
 	for _, name in ipairs(self._trackNames) do
-		self:Stop(name, fadeOutTime)
+		self:StopTrack(name, fadeOutTime)
 	end
 end
 
@@ -892,13 +723,13 @@ function FluxaController.Step(self: ControllerInstance, dt: number): PoseData
 		local current = self._smoothedTrackWeights[trackName] or 0
 		self._smoothedTrackWeights[trackName] = current + (target - current) * clamp01(dt * self.WeightSmoothingSpeed)
 
-		if track.AutoManage and track.Looped then
+		if track.AutoManage and not track.IsOneShot then
 			if target <= 0 then
-				if track.Track.IsPlaying then
+				if track.Track.Playing then
 					track.Track:Stop(track.Track.FadeOutTime)
 				end
-			elseif not track.Track.IsPlaying then
-				beginTrackPlayback(self, trackName, track, track.Track.FadeInTime)
+			elseif not track.Track.Playing then
+				track.Track:Play(track.Track.FadeInTime)
 			end
 		end
 	end
@@ -950,7 +781,7 @@ function FluxaController.Destroy(self: ControllerInstance)
 	self:StopLoop()
 
 	for _, track in pairs(self._tracks) do
-		if track.Track.IsPlaying then
+		if track.Track.Playing then
 			track.Track:Stop(0)
 		end
 	end
@@ -964,8 +795,6 @@ function FluxaController.Destroy(self: ControllerInstance)
 	table.clear(self._blendTrees)
 	table.clear(self._appliedReplicationAnimationStartTimes)
 	table.clear(self._drivers)
-	table.clear(self._globalDriverReplication)
-	table.clear(self._layerDriverReplication)
 	table.clear(self.Layers)
 end
 

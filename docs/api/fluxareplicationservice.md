@@ -51,14 +51,23 @@ Each `TrackConfig` accepts a `ReplicationSeekMode` string:
 
 ### What is replicated
 
-* Track weights (which tracks are active and at what weight)
-* Track time positions (for tracks with `ReplicationSeekMode = "Always"` or `"LoopingOnly"`)
-* Layer weights
+* Global drivers filtered by per-driver replication flags
+* Layer drivers filtered by per-driver replication flags
+* Animation start markers (`MarkLayerAnimationStart` or auto start markers from `AutoReplicate` tracks)
 
 ### What is not replicated
 
-* Driver values (input state, camera direction, movement context)
+* Drivers explicitly disabled via `SetGlobalDriverReplication(..., false)` or `SetLayerDriverReplication(..., false)`
 * Blend tree function logic
 * Procedural overrides applied in `OnPostBlend`
+
+### Driver-by-driver replication control
+
+Use the controller API to choose replication per driver:
+
+* Global: `SetGlobalDriverReplication(key, enabled)`
+* Layer: `SetLayerDriverReplication(layerName, key, enabled)`
+
+You can also provide defaults up front with `GlobalDriverReplication` and `LayerDriverReplication` in `FluxaController.new(...)`.
 
 For full documentation of the `FluxaReplicationService` API, see the [Fluxa GitBook](https://brycki404.gitbook.io/fluxa/api-reference/fluxareplicationservice).

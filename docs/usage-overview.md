@@ -45,3 +45,14 @@ UniversalJointWriter ← writes PoseData to rig Motor6Ds / Bones / AnimationCons
 ## Notes
 
 Fluxa is actively developed, so the public API may change. The docs here are intended to capture the current runtime system and provide a starting point for developers.
+
+## Replication Controls
+
+FluxaController exposes fine-grained replication controls:
+
+* Per-track animation-start replication via `TrackConfig.AutoReplicate` or `SetTrackAutoReplicate(...)`.
+* Per-global-driver replication via `SetGlobalDriverReplication(...)`.
+* Per-layer-driver replication via `SetLayerDriverReplication(...)`.
+* Constructor defaults via `GlobalDriverReplication` and `LayerDriverReplication` in `FluxaController.new(...)`.
+
+Use these controls to keep important gameplay animation state synchronized while preserving local-only driver data when needed.
