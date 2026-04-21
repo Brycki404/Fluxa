@@ -15,12 +15,16 @@ Additional examples will be created for every feature in future updates.
 
 ## Getting Started
 **For Rojo + Wally users**
+
 Add the latest version to your wally.toml from here [Wally](https://wally.run/package/brycki404/fluxa)
 
+For more help, check out [the Rojo documentation](https://rojo.space/docs).
+
 **For Studio users**
+
 Open the Uncopylocked Studio here to get the most up-to-date fluxa module: https://www.roblox.com/games/107928648886650/Fluxa-Dev
 
-For more help, check out [the Rojo documentation](https://rojo.space/docs).
+
 
 ## Documentation
 Public documentation for Fluxa is available on my [Gitbook.io site](https://brycki404.gitbook.io/fluxa/)
