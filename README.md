@@ -19,9 +19,7 @@ Add this to your wally.toml:
 >`fluxa = "brycki404/fluxa@2.0.1"`
 
 **For Studio users**
-Download the latest rbxl file from [Github Releases](https://github.com/Brycki404/Fluxa/releases)
-
-Or open the Uncopylocked Studio here: https://www.roblox.com/games/107928648886650/Fluxa-Dev
+Open the Uncopylocked Studio here to get the most up-to-date fluxa module: https://www.roblox.com/games/107928648886650/Fluxa-Dev
 
 For more help, check out [the Rojo documentation](https://rojo.space/docs).
 
