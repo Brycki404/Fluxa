@@ -145,7 +145,7 @@ Returns the time position of the first `AnimationEvent` whose `Name` matches `ke
 |-----------|------|-------------|
 | `keyframeName` | `string` | Name to search for |
 
-Returns: `number` — the time in seconds, or `0` if no match is found.
+Returns: `number` — the matching keyframe time in seconds.
 
 Throws an error if the asset has no keyframes/events, or if no keyframe matches `keyframeName`.
 

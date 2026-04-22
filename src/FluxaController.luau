@@ -45,11 +45,9 @@ export type LayerConfig = {
 export type TrackConfig = {
 	Asset: any,
 	TrackOptions: {[string]: any}?,
-	PlayerOptions: {[string]: any}?,
 	Layer: string?,
 	AutoManage: boolean?,
 	AutoReplicate: boolean?,
-	Looped: boolean?,
 	InitialWeight: number?,
 	ReplicationSeekMode: ReplicationSeekMode?,
 }
@@ -712,7 +710,7 @@ end
 function FluxaController.AddTrack(self: ControllerInstance, name: string, asset: any, config: TrackConfig?)
 	assert(asset ~= nil, "FluxaController:AddTrack requires animation asset")
 
-	local rawTrackOptions = if config and config.TrackOptions then config.TrackOptions else if config and config.PlayerOptions then config.PlayerOptions else nil
+	local rawTrackOptions = if config and config.TrackOptions then config.TrackOptions else nil
 	local trackOptions: {[string]: any} = if rawTrackOptions ~= nil then table.clone(rawTrackOptions) else {}
 	local track = AnimationTrack.new(asset, trackOptions)
 

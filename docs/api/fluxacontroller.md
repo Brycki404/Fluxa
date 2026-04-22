@@ -23,9 +23,7 @@ Passed as values in the `Tracks` table when constructing a controller.
 |-------|------|---------|-------------|
 | `Asset` | `AnimationAssetInstance` | required | Animation asset |
 | `TrackOptions` | `{[string]: any}?` | `nil` | Options passed directly to `AnimationTrack.new` |
-| `PlayerOptions` | `{[string]: any}?` | `nil` | Legacy alias for `TrackOptions` |
 | `Layer` | `string` | `"Base"` | Layer this track belongs to |
-| `Looped` | `boolean` | `true` | Legacy field. Prefer `TrackOptions.Looped` (or `PlayerOptions.Looped`) for runtime playback behavior |
 | `AutoManage` | `boolean` | `true` | Controller auto-plays/stops based on weight |
 | `AutoReplicate` | `boolean` | `false` | If true, starting this track auto-emits replication start markers |
 | `InitialWeight` | `number` | `0` | Initial target weight for this track |
