@@ -216,13 +216,20 @@ function AnimationAsset.new(sequence: KeyframeSequence, nameOverride: string?): 
 
 	-- Duration = last keyframe time
 	local last = 0
+	local hasKeyframes = false
 	for _, keyframe: Instance in ipairs(sequence:GetKeyframes()) do
 		if not keyframe:IsA("Keyframe") then
 			continue
 		end
+		hasKeyframes = true
 		if keyframe.Time > last then
 			last = keyframe.Time
 		end
+	end
+	-- Single-frame clips authored only at t=0 have a computed duration of 0,
+	-- which causes tracks to instantly complete. Give them a minimal duration.
+	if hasKeyframes and last <= 0 then
+		last = 1 / 30
 	end
 	self.Duration = last
 	
@@ -232,6 +239,7 @@ function AnimationAsset.new(sequence: KeyframeSequence, nameOverride: string?): 
 
 	return self
 end
+
 
 ---------------------------------------------------------------------
 -- API
