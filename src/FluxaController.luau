@@ -854,7 +854,11 @@ function FluxaController.Play(self: ControllerInstance, trackName: string, fadeI
 		return
 	end
 
-	self._trackTargets[trackName] = 1
+	local targetWeight = if weight ~= nil then clamp01(weight) else 1
+	self._trackTargets[trackName] = targetWeight
+	if fadeInTime ~= nil and fadeInTime <= 0 then
+		self._smoothedTrackWeights[trackName] = targetWeight
+	end
 	beginTrackPlayback(self, trackName, track, fadeInTime, weight, speed)
 end
 
