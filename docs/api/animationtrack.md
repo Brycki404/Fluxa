@@ -59,9 +59,9 @@ Creates a new `AnimationTrackInstance`.
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
 | `Speed` | `number` | `1` | Playback speed multiplier |
-| `Looped` | `boolean` | `false` | Whether the track loops |
-| `FadeInTime` | `number` | `0` | Default fade-in duration |
-| `FadeOutTime` | `number` | `0` | Default fade-out duration |
+| `Looped` | `boolean` | `true` | Whether the track loops |
+| `FadeInTime` | `number` | `0.2` | Default fade-in duration |
+| `FadeOutTime` | `number` | `0.2` | Default fade-out duration |
 | `Weight` | `number` | `1` | Initial target weight |
 
 Returns: `AnimationTrackInstance`
@@ -75,7 +75,7 @@ Starts playback. Resets `Time` to `0` and sets `IsPlaying` to `true`.
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
 | `fadeInTime` | `number?` | `self.FadeInTime` | Fade-in duration in seconds |
-| `weight` | `number?` | `self._PlayTargetWeight` | Target weight, clamped to `[0, 1]` |
+| `weight` | `number?` | `1` | Target weight, clamped to `[0, 1]` |
 | `speed` | `number?` | `self.Speed` | Playback speed override |
 
 Calling `Play` while the track is already playing restarts it from the beginning. The `Stopped` and `Ended` guard flags are reset so signals fire again on the next natural completion.
@@ -86,7 +86,7 @@ Stops playback and begins the fade-out envelope.
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
-| `fadeOutTime` | `number?` | `self.FadeOutTime` | Fade-out duration in seconds |
+| `fadeOutTime` | `number?` | `0` | Fade-out duration in seconds |
 
 If the track is not playing and its weight is already at or below zero, `Stop` returns immediately without firing signals.
 
@@ -146,6 +146,8 @@ Returns the time position of the first `AnimationEvent` whose `Name` matches `ke
 | `keyframeName` | `string` | Name to search for |
 
 Returns: `number` — the time in seconds, or `0` if no match is found.
+
+Throws an error if the asset has no keyframes/events, or if no keyframe matches `keyframeName`.
 
 #### `track:Destroy()`
 

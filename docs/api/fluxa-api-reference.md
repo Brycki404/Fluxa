@@ -83,10 +83,10 @@ local controller = FluxaController.new({
         Landing = { Weight = 0, Order = 1 },
     },
     Tracks = {
-        Idle  = { Asset = assets.Idle,  Layer = "Base",    AutoManage = true,  Looped = true },
-        Walk  = { Asset = assets.Walk,  Layer = "Base",    AutoManage = true,  Looped = true },
-        Run   = { Asset = assets.Run,   Layer = "Base",    AutoManage = true,  Looped = true },
-        Land  = { Asset = assets.Land,  Layer = "Landing", AutoManage = false, Looped = false, AutoReplicate = true, ReplicationSeekMode = "Never" },
+        Idle  = { Asset = assets.Idle,  Layer = "Base",    AutoManage = true,  TrackOptions = { Looped = true } },
+        Walk  = { Asset = assets.Walk,  Layer = "Base",    AutoManage = true,  TrackOptions = { Looped = true } },
+        Run   = { Asset = assets.Run,   Layer = "Base",    AutoManage = true,  TrackOptions = { Looped = true } },
+        Land  = { Asset = assets.Land,  Layer = "Landing", AutoManage = false, TrackOptions = { Looped = false }, AutoReplicate = true, ReplicationSeekMode = "Never" },
     },
     GlobalDriverReplication = {
         Speed = true,

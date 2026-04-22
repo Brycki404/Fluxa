@@ -2,7 +2,7 @@
 
 Module path: `Fluxa.FluxaReplicationService`
 
-`FluxaReplicationService` handles cross-client animation state synchronization. It serializes a `FluxaController`'s layer and track state each frame and broadcasts it to remote clients, where a second "remote" controller applies the received packet.
+`FluxaReplicationService` handles cross-client animation state synchronization. It serializes a `FluxaController` replication packet each frame (global drivers, layer drivers, and recent animation start markers) and broadcasts it to remote clients, where a second "remote" controller applies the received packet.
 
 ### Overview
 

@@ -25,7 +25,7 @@ Passed as values in the `Tracks` table when constructing a controller.
 | `TrackOptions` | `{[string]: any}?` | `nil` | Options passed directly to `AnimationTrack.new` |
 | `PlayerOptions` | `{[string]: any}?` | `nil` | Legacy alias for `TrackOptions` |
 | `Layer` | `string` | `"Base"` | Layer this track belongs to |
-| `Looped` | `boolean` | `true` | If false, plays once and stops |
+| `Looped` | `boolean` | `true` | Legacy field. Prefer `TrackOptions.Looped` (or `PlayerOptions.Looped`) for runtime playback behavior |
 | `AutoManage` | `boolean` | `true` | Controller auto-plays/stops based on weight |
 | `AutoReplicate` | `boolean` | `false` | If true, starting this track auto-emits replication start markers |
 | `InitialWeight` | `number` | `0` | Initial target weight for this track |
@@ -221,7 +221,7 @@ end
 
 ### Playback methods
 
-#### `controller:Play(trackName, fadeInTime?)`
+#### `controller:Play(trackName, fadeInTime?, weight?, speed?)`
 
 Plays a named track with an optional fade-in time. Resets the track's time position to `0`.
 
@@ -229,6 +229,8 @@ Plays a named track with an optional fade-in time. Resets the track's time posit
 |-----------|------|---------|-------------|
 | `trackName` | `string` | required | Track name |
 | `fadeInTime` | `number?` | track default | Fade-in duration in seconds |
+| `weight` | `number?` | `1` | Target play weight, clamped to `[0, 1]` |
+| `speed` | `number?` | current track speed | Playback speed override |
 
 #### `controller:Stop(trackName, fadeOutTime?)`
 
