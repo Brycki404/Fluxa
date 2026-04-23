@@ -25,10 +25,12 @@ type LayerReplicationState = {
 
 type DriverReplicationMap = {[string]: boolean}
 type LayerDriverReplicationMap = {[string]: DriverReplicationMap}
+type TrackBindingResolver = (self: ControllerInstance, trackName: string, bindingId: string, previousBindingId: string?) -> (any?, TrackConfig?)
 type ReplicationPacket = {
 	Timestamp: number,
 	Drivers: {[string]: any}?,
 	Layers: {[string]: LayerReplicationState},
+	TrackBindings: {[string]: string}?,
 }
 
 local ANIMATION_START_REPLICATION_WINDOW = 0.6
@@ -44,12 +46,21 @@ export type LayerConfig = {
 
 export type TrackConfig = {
 	Asset: any,
+	BindingId: string?,
 	TrackOptions: {[string]: any}?,
+	PreservePhaseOnSwap: boolean?,
 	Layer: string?,
 	AutoManage: boolean?,
 	AutoReplicate: boolean?,
 	InitialWeight: number?,
 	ReplicationSeekMode: ReplicationSeekMode?,
+}
+
+export type TrackSwapOptions = {
+	PreservePhase: boolean?,
+	preservePhase: boolean?,
+	BindingId: string?,
+	TrackOptions: {[string]: any}?,
 }
 
 export type NewOptions = {
@@ -65,6 +76,7 @@ export type NewOptions = {
 	Layers: {[string]: LayerConfig}?,
 	Tracks: {[string]: TrackConfig}?,
 	BlendTrees: {[string]: BlendTreeResolver}?,
+	TrackBindingResolver: TrackBindingResolver?,
 	OnPreStep: ((self: ControllerInstance, dt: number) -> ())?,
 	OnPostStep: ((self: ControllerInstance, dt: number, finalPose: PoseData) -> ())?,
 	OnPostBlend: ((self: ControllerInstance, finalPose: PoseData, dt: number) -> PoseData?)?,
@@ -106,9 +118,13 @@ export type ControllerInstance = {
 	MarkLayerAnimationStart: (self: ControllerInstance, layerName: string, animationName: string) -> number,
 	GetReplicationPacket: (self: ControllerInstance) -> ReplicationPacket,
 	ApplyReplicationPacket: (self: ControllerInstance, packet: ReplicationPacket) -> (),
+    SetTrackBindingResolver: (self: ControllerInstance, resolver: TrackBindingResolver?) -> (),
+    GetTrackBinding: (self: ControllerInstance, name: string) -> string?,
+    GetTrackBindings: (self: ControllerInstance) -> {[string]: string},
 
-	AddTrack: (self: ControllerInstance, name: string, asset: any, config: TrackConfig?) -> any,
-	RemoveTrack: (self: ControllerInstance, name: string) -> (),
+	LoadTrack: (self: ControllerInstance, name: string, asset: any, config: TrackConfig?) -> any,
+	SetTrackAsset: (self: ControllerInstance, name: string, asset: any, options: TrackSwapOptions?) -> any,
+	UnloadTrack: (self: ControllerInstance, name: string) -> (),
 	SetTrackLayer: (self: ControllerInstance, name: string, layerName: string) -> (),
 	SetTrackAutoReplicate: (self: ControllerInstance, name: string, enabled: boolean) -> (),
 	GetTrackAutoReplicate: (self: ControllerInstance, name: string) -> boolean,
@@ -146,6 +162,8 @@ export type ControllerInstance = {
 	_trackTargets: NumberMap,
 	_smoothedTrackWeights: NumberMap,
 	_blendTrees: {[string]: BlendTreeResolver},
+	_trackBindings: {[string]: string},
+	_trackBindingResolver: TrackBindingResolver?,
 	_defaultReplicationSeekMode: ReplicationSeekMode,
 	_appliedReplicationAnimationStartTimes: {[string]: {[string]: number}},
 	_drivers: AnyMap,
@@ -285,6 +303,80 @@ local function cloneLayerDriverReplicationMap(map: LayerDriverReplicationMap?): 
 	return cloned
 end
 
+local function resolveBindingId(name: string, asset: any, config: TrackConfig?): string
+	if config ~= nil and type(config.BindingId) == "string" and config.BindingId ~= "" then
+		return config.BindingId
+	end
+
+	if asset ~= nil then
+		local candidate = (asset :: any).Name
+		if type(candidate) == "string" and candidate ~= "" then
+			return candidate
+		end
+	end
+
+	return name
+end
+
+local function getTrackSwapPreservePhase(options: TrackSwapOptions?): boolean
+	if options == nil then
+		return false
+	end
+
+	if options.PreservePhase ~= nil then
+		return options.PreservePhase == true
+	end
+
+	if options.preservePhase ~= nil then
+		return options.preservePhase == true
+	end
+
+	return false
+end
+
+local function getTrackNormalizedPhase(track: any): number?
+	local asset = track.Asset
+	if asset == nil or asset.GetLength == nil then
+		return nil
+	end
+
+	local duration = asset:GetLength()
+	if type(duration) ~= "number" or duration <= 0 then
+		return nil
+	end
+
+	local timePosition = if (track :: any).TimePosition ~= nil then (track :: any).TimePosition else (track :: any).Time
+	if type(timePosition) ~= "number" then
+		return nil
+	end
+
+	return math.clamp(timePosition / duration, 0, 1)
+end
+
+local function applyTrackNormalizedPhase(track: any, normalizedPhase: number?)
+	if normalizedPhase == nil then
+		return
+	end
+
+	local asset = track.Asset
+	if asset == nil or asset.GetLength == nil then
+		return
+	end
+
+	local duration = asset:GetLength()
+	if type(duration) ~= "number" or duration <= 0 then
+		return
+	end
+
+	local nextTimePosition = math.clamp(normalizedPhase, 0, 1) * duration
+	if (track :: any).TimePosition ~= nil then
+		(track :: any).TimePosition = nextTimePosition
+	end
+	if (track :: any).Time ~= nil then
+		(track :: any).Time = nextTimePosition
+	end
+end
+
 local function shouldTrackAutoReplicate(trackState: TrackState): boolean
 	if trackState.AutoReplicate then
 		return true
@@ -415,6 +507,8 @@ function FluxaController.new(options: NewOptions): ControllerInstance
 	self._trackTargets = {}
 	self._smoothedTrackWeights = {}
 	self._blendTrees = {}
+	self._trackBindings = {}
+	self._trackBindingResolver = options.TrackBindingResolver
 	self._defaultReplicationSeekMode = normalizeReplicationSeekMode(options.ReplicationSeekMode)
 	self._appliedReplicationAnimationStartTimes = {}
 	self._drivers = table.clone(options.Drivers or options.Params or {})
@@ -439,7 +533,7 @@ function FluxaController.new(options: NewOptions): ControllerInstance
 
 	if options.Tracks then
 		for trackName, trackConfig in pairs(options.Tracks) do
-			self:AddTrack(trackName, trackConfig.Asset, trackConfig)
+			self:LoadTrack(trackName, trackConfig.Asset, trackConfig)
 		end
 	end
 
@@ -611,12 +705,47 @@ function FluxaController.GetReplicationPacket(self: ControllerInstance): Replica
 		Timestamp = now,
 		Drivers = collectReplicatedDrivers(self._drivers, self._globalDriverReplication),
 		Layers = layers,
+		TrackBindings = table.clone(self._trackBindings),
 	}
 end
 
 function FluxaController.ApplyReplicationPacket(self: ControllerInstance, packet: ReplicationPacket)
 	if packet == nil or type(packet) ~= "table" then
 		return
+	end
+
+	if type(packet.TrackBindings) == "table" then
+		local incomingBindings = packet.TrackBindings :: {[string]: string}
+
+		for trackName in pairs(self._trackBindings) do
+			if incomingBindings[trackName] == nil then
+				self:UnloadTrack(trackName)
+			end
+		end
+
+		for trackName, bindingId in pairs(incomingBindings) do
+			if type(bindingId) ~= "string" or bindingId == "" then
+				continue
+			end
+
+			local currentBindingId = self._trackBindings[trackName]
+			if currentBindingId == bindingId and self._tracks[trackName] ~= nil then
+				continue
+			end
+
+			if self._trackBindingResolver ~= nil then
+				local asset, trackConfig = self._trackBindingResolver(self, trackName, bindingId, currentBindingId)
+				if asset ~= nil then
+					local config = trackConfig or {}
+					(config :: any).BindingId = bindingId
+					self:LoadTrack(trackName, asset, config)
+				else
+					self:UnloadTrack(trackName)
+				end
+			else
+				self._trackBindings[trackName] = bindingId
+			end
+		end
 	end
 
 	if type(packet.Drivers) == "table" then
@@ -707,29 +836,47 @@ function FluxaController.ApplyReplicationPacket(self: ControllerInstance, packet
 	end
 end
 
-function FluxaController.AddTrack(self: ControllerInstance, name: string, asset: any, config: TrackConfig?)
-	assert(asset ~= nil, "FluxaController:AddTrack requires animation asset")
+function FluxaController.LoadTrack(self: ControllerInstance, name: string, asset: any, config: TrackConfig?)
+	assert(asset ~= nil, "FluxaController:LoadTrack requires animation asset")
+
+	local previousTrackState = self._tracks[name]
+	local previousTargetWeight = self._trackTargets[name]
+	local previousSmoothedWeight = self._smoothedTrackWeights[name]
+
+	if previousTrackState ~= nil then
+		self:UnloadTrack(name)
+	end
 
 	local rawTrackOptions = if config and config.TrackOptions then config.TrackOptions else nil
 	local trackOptions: {[string]: any} = if rawTrackOptions ~= nil then table.clone(rawTrackOptions) else {}
 	local track = AnimationTrack.new(asset, trackOptions)
 
-	local layerName = if config and config.Layer then config.Layer else "Base"
-	local autoReplicate = if config and config.AutoReplicate ~= nil then config.AutoReplicate else false
+	local layerName = if config and config.Layer then config.Layer else if previousTrackState ~= nil then previousTrackState.Layer else "Base"
+	local autoManage = if config and config.AutoManage ~= nil then config.AutoManage else if previousTrackState ~= nil then previousTrackState.AutoManage else true
+	local autoReplicate = if config and config.AutoReplicate ~= nil then config.AutoReplicate else if previousTrackState ~= nil then previousTrackState.AutoReplicate else false
+	local replicationSeekMode: ReplicationSeekMode = self._defaultReplicationSeekMode
+	if previousTrackState ~= nil then
+		replicationSeekMode = previousTrackState.ReplicationSeekMode
+	end
+	if config and config.ReplicationSeekMode ~= nil then
+		replicationSeekMode = normalizeReplicationSeekMode(config.ReplicationSeekMode)
+	end
 	if self._layers[layerName] == nil then
 		self:AddLayer(layerName, nil)
 	end
 
-	self._tracks[name] = {
+	local bindingId = resolveBindingId(name, asset, config)
+
+	local nextTrackState: TrackState = {
 		Name = name,
 		Layer = layerName,
 		Track = track,
-		AutoManage = if config and config.AutoManage ~= nil then config.AutoManage else true,
+		AutoManage = autoManage,
 		AutoReplicate = autoReplicate,
-		ReplicationSeekMode = if config and config.ReplicationSeekMode ~= nil
-			then normalizeReplicationSeekMode(config.ReplicationSeekMode)
-			else self._defaultReplicationSeekMode,
+		ReplicationSeekMode = replicationSeekMode,
 	}
+	self._tracks[name] = nextTrackState
+	self._trackBindings[name] = bindingId
 	local trackInstance = track :: any
 	trackInstance.AutoReplicate = autoReplicate
 
@@ -737,9 +884,11 @@ function FluxaController.AddTrack(self: ControllerInstance, name: string, asset:
 		table.insert(self._trackNames, name)
 	end
 
-	local initialWeight = if config and config.InitialWeight ~= nil then config.InitialWeight else 0
+	local initialWeight = if config and config.InitialWeight ~= nil
+		then config.InitialWeight
+		else if previousTargetWeight ~= nil then previousTargetWeight else 0
 	self._trackTargets[name] = clamp01(initialWeight)
-	self._smoothedTrackWeights[name] = clamp01(initialWeight)
+	self._smoothedTrackWeights[name] = if previousSmoothedWeight ~= nil then clamp01(previousSmoothedWeight) else clamp01(initialWeight)
 
 	if self._tracks[name].AutoManage and self._trackTargets[name] > 0 and self._tracks[name].Track.Looped then
 		beginTrackPlayback(self, name, self._tracks[name], track.FadeInTime)
@@ -748,16 +897,61 @@ function FluxaController.AddTrack(self: ControllerInstance, name: string, asset:
 	return track
 end
 
-function FluxaController.RemoveTrack(self: ControllerInstance, name: string)
+function FluxaController.SetTrackAsset(self: ControllerInstance, name: string, asset: any, options: TrackSwapOptions?)
+	assert(asset ~= nil, "FluxaController:SetTrackAsset requires animation asset")
+
+	local previousTrackState = self._tracks[name]
+	local preservePhase = getTrackSwapPreservePhase(options)
+	local previousNormalizedPhase = nil
+	local previousWasPlaying = false
+
+	if previousTrackState ~= nil then
+		local previousTrack = previousTrackState.Track
+		previousWasPlaying = previousTrack.IsPlaying == true
+		if preservePhase then
+			previousNormalizedPhase = getTrackNormalizedPhase(previousTrack)
+		end
+	end
+
+	local trackConfig: TrackConfig = {
+		Asset = asset,
+		BindingId = if options ~= nil then options.BindingId else nil,
+		TrackOptions = if options ~= nil and options.TrackOptions ~= nil then options.TrackOptions else nil,
+	}
+
+	local nextTrack = self:LoadTrack(name, asset, trackConfig)
+	if previousTrackState == nil then
+		return nextTrack
+	end
+
+	local nextTrackAny = nextTrack :: any
+	if previousWasPlaying and not nextTrack.IsPlaying then
+		nextTrack:Play(0)
+	end
+
+	if preservePhase then
+		applyTrackNormalizedPhase(nextTrackAny, previousNormalizedPhase)
+	end
+
+	return nextTrack
+end
+
+function FluxaController.UnloadTrack(self: ControllerInstance, name: string)
 	local track = self._tracks[name]
-	if track and track.Track.IsPlaying then
-		track.Track:Stop(0)
+	if track then
+		if track.Track.IsPlaying then
+			track.Track:Stop(0)
+		end
+		if (track.Track :: any).Destroy ~= nil then
+			track.Track:Destroy()
+		end
 	end
 
 	self._tracks[name] = nil
 	removeKey(self._trackNames, name)
 	self._trackTargets[name] = nil
 	self._smoothedTrackWeights[name] = nil
+	self._trackBindings[name] = nil
 end
 
 function FluxaController.SetTrackLayer(self: ControllerInstance, name: string, layerName: string)
@@ -806,6 +1000,18 @@ end
 function FluxaController.GetTrack(self: ControllerInstance, name: string): any?
 	local state = self._tracks[name]
 	return if state then state.Track else nil
+end
+
+function FluxaController.SetTrackBindingResolver(self: ControllerInstance, resolver: TrackBindingResolver?)
+	self._trackBindingResolver = resolver
+end
+
+function FluxaController.GetTrackBinding(self: ControllerInstance, name: string): string?
+	return self._trackBindings[name]
+end
+
+function FluxaController.GetTrackBindings(self: ControllerInstance): {[string]: string}
+	return table.clone(self._trackBindings)
 end
 
 function FluxaController.GetPlayingTracks(self: ControllerInstance): { any }
@@ -950,6 +1156,9 @@ function FluxaController.Destroy(self: ControllerInstance)
 		if track.Track.IsPlaying then
 			track.Track:Stop(0)
 		end
+		if (track.Track :: any).Destroy ~= nil then
+			track.Track:Destroy()
+		end
 	end
 
 	table.clear(self._layers)
@@ -959,6 +1168,7 @@ function FluxaController.Destroy(self: ControllerInstance)
 	table.clear(self._trackTargets)
 	table.clear(self._smoothedTrackWeights)
 	table.clear(self._blendTrees)
+	table.clear(self._trackBindings)
 	table.clear(self._appliedReplicationAnimationStartTimes)
 	table.clear(self._drivers)
 	table.clear(self._globalDriverReplication)

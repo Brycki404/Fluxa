@@ -2,7 +2,7 @@
 
 Module path: `Fluxa.FluxaReplicationService`
 
-`FluxaReplicationService` handles cross-client animation state synchronization. It serializes a `FluxaController` replication packet each frame (global drivers, layer drivers, and recent animation start markers) and broadcasts it to remote clients, where a second "remote" controller applies the received packet.
+`FluxaReplicationService` handles cross-client animation state synchronization. It serializes a `FluxaController` replication packet each frame (track bindings, global drivers, layer drivers, and recent animation start markers) and broadcasts it to remote clients, where a second "remote" controller applies the received packet.
 
 ### Overview
 
@@ -54,6 +54,7 @@ Each `TrackConfig` accepts a `ReplicationSeekMode` string:
 * Global drivers filtered by per-driver replication flags
 * Layer drivers filtered by per-driver replication flags
 * Animation start markers (`MarkLayerAnimationStart` or auto start markers from `AutoReplicate` tracks)
+* Track bindings (`trackName -> bindingId`) so remote controllers can hot-swap tracks without changing blend trees
 
 ### What is not replicated
 

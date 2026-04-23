@@ -22,6 +22,7 @@ Passed as values in the `Tracks` table when constructing a controller.
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
 | `Asset` | `AnimationAssetInstance` | required | Animation asset |
+| `BindingId` | `string?` | `asset.Name` or track name | Stable replicated binding identifier for this track |
 | `TrackOptions` | `{[string]: any}?` | `nil` | Options passed directly to `AnimationTrack.new` |
 | `Layer` | `string` | `"Base"` | Layer this track belongs to |
 | `AutoManage` | `boolean` | `true` | Controller auto-plays/stops based on weight |
@@ -50,6 +51,7 @@ Passed to `FluxaController.new`.
 | `Layers` | `{[string]: LayerConfig}` | Named layer definitions |
 | `Tracks` | `{[string]: TrackConfig}` | Named track definitions |
 | `BlendTrees` | `{[string]: BlendTreeFn}?` | Named blend tree functions |
+| `TrackBindingResolver` | `function?` | Resolves replicated `BindingId` values into local assets |
 | `AutoStart` | `boolean?` | Starts the internal step loop immediately |
 | `WeightSmoothingSpeed` | `number?` | Smoothing speed for weight interpolation |
 | `ReplicationSeekMode` | `"Always"\|"LoopingOnly"\|"Never"?` | Default seek mode for tracks that do not override it |
@@ -159,13 +161,54 @@ Use this for manual or one-off triggers. For per-track automatic behavior, prefe
 
 ### Track methods
 
-#### `controller:AddTrack(name, asset, config?)`
+#### `controller:LoadTrack(name, asset, config?)`
 
-Adds a new track at runtime.
+Loads (or hot-swaps) a named track at runtime.
 
-#### `controller:RemoveTrack(name)`
+If a track already exists under this name, Fluxa unloads and destroys the old track first, then binds the new track under the same name. This keeps blend trees unchanged while animation assets swap underneath.
+
+#### `controller:SetTrackAsset(name, asset, options?)`
+
+Swaps the asset underneath an existing track name with an explicit phase policy.
+
+Options:
+
+* `PreservePhase` or `preservePhase` - when `true`, Fluxa preserves the old track's normalized phase on the new asset
+* `BindingId` - override the binding id stored for replication
+* `TrackOptions` - optional track options for the new track instance
+
+Use this when swap behavior must be explicit instead of inferred:
+
+* locomotion swaps usually use `PreservePhase = true`
+* one-shot swaps usually use `PreservePhase = false`
+
+#### `controller:UnloadTrack(name)`
 
 Removes a track by name and stops it if currently playing.
+
+Also destroys the underlying track instance for memory safety.
+
+#### `controller:SetTrackBindingResolver(resolverFn)`
+
+Sets a resolver used by replication to map `BindingId` values to local assets.
+
+Signature:
+
+```lua
+resolverFn = function(controller, trackName, bindingId, previousBindingId)
+    return resolvedAsset, optionalTrackConfig
+end
+```
+
+Return `nil` as `resolvedAsset` to unload that track when the replicated binding changes.
+
+#### `controller:GetTrackBinding(trackName)`
+
+Returns the current replicated binding id for a track name, or `nil` if the track is not loaded.
+
+#### `controller:GetTrackBindings()`
+
+Returns a cloned map of all active track bindings (`trackName -> bindingId`).
 
 #### `controller:SetTrackLayer(trackName, layerName)`
 
@@ -297,6 +340,7 @@ Returns a serializable table representing replication state.
 
 Includes:
 
+* Track bindings (`trackName -> bindingId`)
 * Global drivers filtered by `GlobalDriverReplication`
 * Layer drivers filtered by `LayerDriverReplication`
 * Recent animation-start markers for each layer

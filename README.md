@@ -84,8 +84,10 @@ controller:SetGlobalDriver("Direction", Vector3.new(1, 0, 0))
 - `MarkLayerAnimationStart(layerName, trackName)`
 
 **Track methods**
-- `AddTrack(trackName, config)`
-- `RemoveTrack(trackName)`
+- `LoadTrack(trackName, animationAsset, config)`
+- `UnloadTrack(trackName)`
+- `SetTrackBindingResolver(resolver)`
+- `GetTrackBinding(trackName)` / `GetTrackBindings()`
 - `SetTrackLayer(trackName, layerName)`
 - `SetTrackAutoReplicate(trackName, enabled)` / `GetTrackAutoReplicate(trackName)`
 - `SetTrackWeight(trackName, weight)` / `GetTrackWeight(trackName)`
@@ -110,6 +112,7 @@ controller:SetGlobalDriver("Direction", Vector3.new(1, 0, 0))
 - `ApplyReplicationPacket(packet)`
 
 ### Replication controls
+- Track binding replication (`trackName -> bindingId`) is included in `GetReplicationPacket()`.
 - Per-track animation-start replication: `AutoReplicate` in `TrackConfig`.
 - Per-driver replication filters:
 	- `GlobalDriverReplication` / `SetGlobalDriverReplication`

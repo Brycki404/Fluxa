@@ -20,6 +20,9 @@ local Fluxa = require(ReplicatedStorage.Packages.fluxa)
 | `Pose` | `Fluxa.Pose` | Pose blending utilities |
 | `Retargeting` | `Fluxa.Retargeting` | Joint name remapping between rigs |
 | `UniversalJointWriter` | `Fluxa.UniversalJointWriter` | Write a pose to a character's joints |
+| `FluxaAssetManager` | `Fluxa.FluxaAssetManager` | Load and cache `AnimationAsset` instances from ids or source instances |
+| `FluxaBindingCatalog` | `Fluxa.FluxaBindingCatalog` | Define binding ids, fallback chains, initial bindings, and named sets |
+| `FluxaBindingSetManager` | `Fluxa.FluxaBindingSetManager` | Resolve/apply binding sets to controllers using asset caching |
 | `FluxaController` | `Fluxa.FluxaController` | Full animation graph: tracks, layers, blend trees, replication |
 | `FluxaReplicationService` | `Fluxa.FluxaReplicationService` | Cross-client animation state replication |
 
@@ -46,14 +49,17 @@ Replication controls:
 
 ### Which modules each example uses
 
-| Module | Example 1 | Example 2 | Example 3 |
-|--------|-----------|-----------|-----------|
-| `AnimationAsset` | ✓ | ✓ | ✓ |
-| `AnimationTrack` | ✓ | ✓ | via controller |
-| `Pose` | ✓ | ✓ | via controller |
-| `UniversalJointWriter` | ✓ | ✓ | via controller |
-| `FluxaController` | — | — | ✓ |
-| `FluxaReplicationService` | — | — | ✓ |
+| Module | Example 1 | Example 2 | Example 3 | Example 4 |
+|--------|-----------|-----------|-----------|-----------|
+| `AnimationAsset` | ✓ | ✓ | ✓ | via asset manager |
+| `AnimationTrack` | ✓ | ✓ | via controller | via controller |
+| `Pose` | ✓ | ✓ | via controller | via controller |
+| `UniversalJointWriter` | ✓ | ✓ | via controller | via controller |
+| `FluxaAssetManager` | — | — | — | ✓ |
+| `FluxaBindingCatalog` | — | — | — | ✓ |
+| `FluxaBindingSetManager` | — | — | — | ✓ |
+| `FluxaController` | — | — | ✓ | ✓ |
+| `FluxaReplicationService` | — | — | ✓ | ✓ |
 
 ### Quick start: local-only controller (Example 3 pattern)
 
