@@ -205,12 +205,45 @@ end
 -- CONSTRUCTOR
 ---------------------------------------------------------------------
 
+-- Parsed-asset cache keyed by (KeyframeSequence, Name).
+--
+-- parseKeyframeSequence + extractEvents do a full recursive walk of every
+-- keyframe and sub-pose in the sequence.  For a rig with ~20 tracks this is
+-- non-trivial synchronous work, and is commonly triggered every time a
+-- character spawns -- including every peer respawn.
+--
+-- The AnimationAsset is a read-only view of the sequence's static data
+-- (Channels, Events, Duration), so we memoize by sequence instance and share
+-- the parsed result across every caller for the lifetime of the sequence.
+--
+-- Weak keys: FluxaAssetManager.Load destroys the source KeyframeSequence
+-- after parsing (when the caller owns it or it came from GetKeyframeSequence-
+-- Async).  A weak-keyed cache lets those destroyed sequences drop out as
+-- soon as Lua GCs them so we don't leak their parse trees.
+--
+-- Inner table keyed by Name because the same sequence could in principle be
+-- requested with different nameOverrides.
+local assetCache: { [KeyframeSequence]: { [string]: AnimationAssetInstance } } = setmetatable({}, { __mode = "k" }) :: any
+
 function AnimationAsset.new(sequence: KeyframeSequence, nameOverride: string?): AnimationAssetInstance
 	assert(sequence:IsA("KeyframeSequence"), "AnimationAsset.new requires a KeyframeSequence")
 
-	local self = {}  :: AnimationAssetInstance
+	local name = nameOverride or sequence.Name
 
-	self.Name = nameOverride or sequence.Name
+	local bySequence = assetCache[sequence]
+	if bySequence ~= nil then
+		local cached = bySequence[name]
+		if cached ~= nil then
+			return cached
+		end
+	else
+		bySequence = {}
+		assetCache[sequence] = bySequence
+	end
+
+	local self = {} :: AnimationAssetInstance
+
+	self.Name = name
 	self.Channels = parseKeyframeSequence(sequence)
 	self.Events = extractEvents(sequence)
 
@@ -236,6 +269,8 @@ function AnimationAsset.new(sequence: KeyframeSequence, nameOverride: string?): 
 	self.GetLength = AnimationAsset.GetLength
 	self.GetEventsAt = AnimationAsset.GetEventsAt
 	self.Sample = AnimationAsset.Sample
+
+	bySequence[name] = self
 
 	return self
 end

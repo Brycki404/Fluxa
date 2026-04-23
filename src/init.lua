@@ -11,6 +11,7 @@ Fluxa.FluxaBindingCatalog = require(script.FluxaBindingCatalog)
 Fluxa.FluxaBindingSetManager = require(script.FluxaBindingSetManager)
 Fluxa.FluxaController = require(script.FluxaController)
 Fluxa.FluxaReplicationService = require(script.FluxaReplicationService)
+Fluxa.FluxaService = require(script.FluxaService)
 
 Fluxa.IK = {}
 Fluxa.IK.CCD = require(script.IK.CCD)

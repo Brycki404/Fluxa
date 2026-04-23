@@ -9,6 +9,7 @@ FluxaBindingSetManager.__index = FluxaBindingSetManager
 type BindingCatalogLike = {
 	GetSource: (self: any, bindingId: string) -> any,
 	GetFallbackBinding: (self: any, bindingId: string) -> string?,
+	ResolveFallbackChain: (self: any, bindingId: string) -> {string}?,
 	GetInitialTrackBindings: (self: any) -> {[string]: string},
 	GetSetBindings: (self: any, setName: string, includeInitialBindings: boolean?) -> {[string]: string}?,
 	ResolveBindings: (self: any, layerNames: {string}?, includeInitialBindings: boolean?) -> {[string]: string},
@@ -89,7 +90,7 @@ function FluxaBindingSetManager.RegisterSource(self: BindingSetManagerInstance, 
 end
 
 function FluxaBindingSetManager.RegisterSourcesFromContainer(self: BindingSetManagerInstance, container: Instance)
-	for _, child in ipairs(container:GetChildren()) do
+	for _, child in ipairs(container:GetDescendants()) do
 		if child:IsA("Animation") or child:IsA("KeyframeSequence") then
 			self:RegisterSource(child.Name, child)
 		end
@@ -109,6 +110,20 @@ local function resolveSource(self: BindingSetManagerInstance, bindingId: string)
 	return source
 end
 
+local function shouldDestroyResolvedSource(self: BindingSetManagerInstance, source: any): boolean
+	if typeof(source) ~= "Instance" then
+		return false
+	end
+
+	for _, registeredSource in pairs(self._sourceLookup) do
+		if registeredSource == source then
+			return false
+		end
+	end
+
+	return true
+end
+
 local function loadBinding(self: BindingSetManagerInstance, bindingId: string): any?
 	local existing = self.AssetManager:Get(bindingId)
 	if existing ~= nil then
@@ -122,7 +137,7 @@ local function loadBinding(self: BindingSetManagerInstance, bindingId: string): 
 
 	local ok, loaded = pcall(function()
 		return self.AssetManager:Load(bindingId, source, {
-			DestroySourceInstance = typeof(source) == "Instance",
+			DestroySourceInstance = shouldDestroyResolvedSource(self, source),
 			Overwrite = false,
 		})
 	end)
@@ -135,16 +150,26 @@ local function loadBinding(self: BindingSetManagerInstance, bindingId: string): 
 end
 
 function FluxaBindingSetManager.GetOrLoad(self: BindingSetManagerInstance, bindingId: string): (any?, string?)
-	local direct = loadBinding(self, bindingId)
-	if direct ~= nil then
-		return direct, bindingId
+	-- Prefer the full fallback chain so catalogs can express multi-step
+	-- fallbacks (e.g. pistol_reload_tactical -> pistol_reload_generic -> reload_generic).
+	-- Single-hop fallback was the original behavior; chains make partially-
+	-- populated catalogs viable and cycles in the catalog are clamped by
+	-- ResolveFallbackChain itself.
+	local chain: {string}
+	if self.Catalog.ResolveFallbackChain ~= nil then
+		chain = self.Catalog:ResolveFallbackChain(bindingId) or { bindingId }
+	else
+		chain = { bindingId }
+		local fallback = self.Catalog:GetFallbackBinding(bindingId)
+		if fallback ~= nil and fallback ~= bindingId then
+			table.insert(chain, fallback)
+		end
 	end
 
-	local fallbackBinding = self.Catalog:GetFallbackBinding(bindingId)
-	if fallbackBinding ~= nil and fallbackBinding ~= bindingId then
-		local fallbackAsset = loadBinding(self, fallbackBinding)
-		if fallbackAsset ~= nil then
-			return fallbackAsset, fallbackBinding
+	for _, id in ipairs(chain) do
+		local asset = loadBinding(self, id)
+		if asset ~= nil then
+			return asset, id
 		end
 	end
 
@@ -271,7 +296,24 @@ end
 function FluxaBindingSetManager.ApplyActiveLayers(self: BindingSetManagerInstance, controller: any, trackConfigs: TrackConfigMap?): {[string]: any}
 	local resolvedBindings = self:GetResolvedBindings()
 	local loadedTracks = {}
+
+	-- Delta apply: only touch tracks whose binding actually changes between
+	-- the controller's current state and the resolved set.  This is critical
+	-- when higher layers are added/removed, otherwise every base-layer track
+	-- gets rebuilt (stopping, re-creating, resetting phase) every time any
+	-- single track's binding is overridden in a sibling layer.
+	local currentBindings: {[string]: string} = {}
+	if controller.GetTrackBindings ~= nil then
+		currentBindings = controller:GetTrackBindings()
+	end
+
 	for trackName, bindingId in pairs(resolvedBindings) do
+		if currentBindings[trackName] == bindingId and controller.GetTrack ~= nil and controller:GetTrack(trackName) ~= nil then
+			-- Track already bound to the correct binding; keep it.
+			loadedTracks[trackName] = controller:GetTrack(trackName)
+			continue
+		end
+
 		local baseConfig: {[string]: any} = if trackConfigs ~= nil and trackConfigs[trackName] ~= nil then table.clone(trackConfigs[trackName]) else {}
 		baseConfig.BindingId = bindingId
 		local track = self:LoadTrack(controller, trackName, baseConfig)
@@ -279,6 +321,7 @@ function FluxaBindingSetManager.ApplyActiveLayers(self: BindingSetManagerInstanc
 			loadedTracks[trackName] = track
 		end
 	end
+
 	return loadedTracks
 end
 

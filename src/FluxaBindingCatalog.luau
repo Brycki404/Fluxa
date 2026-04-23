@@ -29,6 +29,7 @@ export type BindingCatalogInstance = {
 
 	GetSource: (self: BindingCatalogInstance, bindingId: string) -> any,
 	GetFallbackBinding: (self: BindingCatalogInstance, bindingId: string) -> string?,
+	ResolveFallbackChain: (self: BindingCatalogInstance, bindingId: string) -> {string},
 	GetInitialTrackBinding: (self: BindingCatalogInstance, trackName: string) -> string?,
 	GetInitialTrackBindings: (self: BindingCatalogInstance) -> TrackBindings,
 	GetSet: (self: BindingCatalogInstance, setName: string) -> TrackBindings?,
@@ -73,6 +74,28 @@ end
 
 function FluxaBindingCatalog.GetFallbackBinding(self: BindingCatalogInstance, bindingId: string): string?
 	return self.Fallbacks[bindingId]
+end
+
+-- Walk the fallback map until we hit a cycle, a missing link, or a self-
+-- reference.  Callers can then try each id in order to find one that
+-- actually has a loadable source.  Guards against malformed catalogs so a
+-- cycle (A -> B -> A) doesn't hang the load path.
+function FluxaBindingCatalog.ResolveFallbackChain(self: BindingCatalogInstance, bindingId: string): {string}
+	local chain: {string} = { bindingId }
+	local visited: {[string]: boolean} = { [bindingId] = true }
+
+	local current = bindingId
+	while true do
+		local next = self.Fallbacks[current]
+		if next == nil or next == "" or visited[next] or next == current then
+			break
+		end
+		table.insert(chain, next)
+		visited[next] = true
+		current = next
+	end
+
+	return chain
 end
 
 function FluxaBindingCatalog.GetInitialTrackBinding(self: BindingCatalogInstance, trackName: string): string?

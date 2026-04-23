@@ -14,6 +14,13 @@ type AnimationAssetSource = AnimationAssetInstance | number | string | Animation
 export type LoadOptions = {
 	DestroySourceInstance: boolean?,
 	Overwrite: boolean?,
+	-- When true (default), LoadFromContainer walks descendants recursively.
+	-- Ignored by Load.
+	Recursive: boolean?,
+	-- When true, suppress the "ignored source mismatch" warning that fires
+	-- when Load is called with Overwrite=false and a different source from
+	-- what was previously cached under the same name.
+	SuppressMismatchWarning: boolean?,
 }
 
 export type LoadManyEntry = {
@@ -33,6 +40,7 @@ export type AssetManagerInstance = {
 	Clear: (self: AssetManagerInstance) -> (),
 
 	_assets: {[string]: AnimationAssetInstance},
+	_sources: {[string]: any},
 }
 
 local function normalizeAnimationIdFromString(value: string): number?
@@ -115,9 +123,31 @@ local function buildAssetFromSource(name: string, source: AnimationAssetSource):
 	error(("FluxaAssetManager: unsupported source for '%s' (expected AnimationId, Animation, or KeyframeSequence)"):format(name), 3)
 end
 
+local function sourceSignatureFor(source: any): any
+	-- Use a stable identity so we can detect "different source for same name"
+	-- without retaining strong refs to destroyed instances.
+	if typeof(source) == "Instance" then
+		return source
+	end
+	if type(source) == "number" then
+		return source
+	end
+	if type(source) == "string" then
+		return source
+	end
+	if type(source) == "table" then
+		return source
+	end
+	return source
+end
+
 function FluxaAssetManager.new(): AssetManagerInstance
 	local self = setmetatable({}, FluxaAssetManager) :: any
 	self._assets = {} :: {[string]: AnimationAssetInstance}
+	-- Keep a weak map of "what source produced this name" so we can surface
+	-- mismatches when callers accidentally shadow an asset.  Weak values so
+	-- destroyed KeyframeSequences don't leak here.
+	self._sources = setmetatable({}, { __mode = "v" }) :: any
 	return self :: AssetManagerInstance
 end
 
@@ -126,11 +156,20 @@ function FluxaAssetManager.Load(self: AssetManagerInstance, name: string, source
 	local sourceAny = source :: any
 
 	if self._assets[name] ~= nil and not shouldOverwriteExisting(options) then
+		local previousSource = self._sources[name]
+		local newSignature = sourceSignatureFor(sourceAny)
+		if previousSource ~= nil and previousSource ~= newSignature then
+			local suppress = options ~= nil and options.SuppressMismatchWarning == true
+			if not suppress then
+				warn(("FluxaAssetManager:Load('%s') ignored a different source because Overwrite=false; the cached asset was kept.  Pass Overwrite=true to replace, or SuppressMismatchWarning=true to silence."):format(name))
+			end
+		end
 		return self._assets[name]
 	end
 
 	local asset = buildAssetFromSource(name, source)
 	self._assets[name] = asset
+	self._sources[name] = sourceSignatureFor(sourceAny)
 
 	if shouldDestroySourceInstance(sourceAny, options) then
 		local sourceInstance = sourceAny
@@ -163,9 +202,21 @@ end
 function FluxaAssetManager.LoadFromContainer(self: AssetManagerInstance, container: Instance, options: LoadOptions?): {[string]: AnimationAssetInstance}
 	assert(typeof(container) == "Instance", "FluxaAssetManager:LoadFromContainer requires a valid container Instance")
 
+	local recursive = true
+	if options ~= nil and options.Recursive ~= nil then
+		recursive = options.Recursive == true
+	end
+
 	local loaded: {[string]: AnimationAssetInstance} = {}
-	for _, child in ipairs(container:GetChildren()) do
+	local descendants = if recursive then container:GetDescendants() else container:GetChildren()
+	for _, child in ipairs(descendants) do
 		if child:IsA("Animation") or child:IsA("KeyframeSequence") then
+			if loaded[child.Name] ~= nil then
+				-- Duplicate asset names across subfolders are almost always a
+				-- catalog authoring mistake.  Surface it instead of silently
+				-- stomping the earlier entry.
+				warn(("FluxaAssetManager:LoadFromContainer: duplicate asset name '%s' at %s"):format(child.Name, child:GetFullName()))
+			end
 			loaded[child.Name] = self:Load(child.Name, child, options)
 		end
 	end
@@ -187,10 +238,12 @@ end
 
 function FluxaAssetManager.Unload(self: AssetManagerInstance, name: string)
 	self._assets[name] = nil
+	self._sources[name] = nil
 end
 
 function FluxaAssetManager.Clear(self: AssetManagerInstance)
 	table.clear(self._assets)
+	table.clear(self._sources)
 end
 
 return FluxaAssetManager

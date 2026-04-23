@@ -10,6 +10,11 @@ local ReplicationService = {}
 local REMOTE_EVENT_NAME = "FluxaReplication"
 local SEND_RATE_HZ = 30
 local ANIMATION_START_TIMES_INTERVAL = 0.25
+-- TrackBindings change rarely (weapon/stance swap) but add bandwidth if sent
+-- every packet.  We delta-replicate: include whenever the controller reports
+-- its bindings as dirty, and also on a slow heartbeat so late-joining peers
+-- recover within ~1s even if they miss the dirty packet.
+local TRACK_BINDINGS_SYNC_INTERVAL = 1.0
 
 local _remoteEvent = nil
 local _localController = nil
@@ -61,6 +66,13 @@ local function stripAnimationStartTimes(packet)
 	end
 end
 
+local function stripTrackBindings(packet)
+	if packet == nil then
+		return
+	end
+	packet.TrackBindings = nil
+end
+
 local function hasAnimationStartTimes(packet)
 	if packet == nil or packet.Layers == nil then
 		return false
@@ -75,14 +87,24 @@ local function hasAnimationStartTimes(packet)
 	return false
 end
 
-local function buildLocalPacket(includeAnimationStartTimes)
+local function buildLocalPacket(includeAnimationStartTimes, includeTrackBindings)
 	if _localController == nil or _localController.GetReplicationPacket == nil then
 		return nil
 	end
 
-	local packet = _localController:GetReplicationPacket()
+	-- Ask the controller up front whether to include bindings; this lets the
+	-- controller clear its dirty flag in one place instead of relying on the
+	-- replication service to strip the field after the fact.
+	local packet = _localController:GetReplicationPacket({
+		IncludeTrackBindings = includeTrackBindings == true,
+	})
+
 	if not includeAnimationStartTimes and not hasAnimationStartTimes(packet) then
 		stripAnimationStartTimes(packet)
+	end
+
+	if not includeTrackBindings then
+		stripTrackBindings(packet)
 	end
 
 	return packet
@@ -135,6 +157,7 @@ function ReplicationService.StartLocalReplication(controller)
 
 	local sendAccumulator = 0
 	local animationStartAccumulator = ANIMATION_START_TIMES_INTERVAL
+	local trackBindingsSyncAccumulator = TRACK_BINDINGS_SYNC_INTERVAL
 
 	_sendConnection = RunService.Heartbeat:Connect(function(dt)
 		if not _localReplicationEnabled then
@@ -149,6 +172,7 @@ function ReplicationService.StartLocalReplication(controller)
 
 		sendAccumulator += dt
 		animationStartAccumulator += dt
+		trackBindingsSyncAccumulator += dt
 
 		if sendAccumulator < (1 / SEND_RATE_HZ) then
 			return
@@ -160,9 +184,23 @@ function ReplicationService.StartLocalReplication(controller)
 			animationStartAccumulator = 0
 		end
 
-		local packet = buildLocalPacket(includeAnimationStartTimes)
+		-- Include bindings whenever they're dirty or at least once every
+		-- TRACK_BINDINGS_SYNC_INTERVAL seconds so peers heal from dropped packets.
+		local bindingsDirty = false
+		if _localController ~= nil and _localController.IsTrackBindingsDirty ~= nil then
+			bindingsDirty = _localController:IsTrackBindingsDirty() == true
+		end
+		local includeTrackBindings = bindingsDirty or trackBindingsSyncAccumulator >= TRACK_BINDINGS_SYNC_INTERVAL
+		if includeTrackBindings then
+			trackBindingsSyncAccumulator = 0
+		end
+
+		local packet = buildLocalPacket(includeAnimationStartTimes, includeTrackBindings)
 		if packet then
 			remoteEvent:FireServer(packet)
+			if includeTrackBindings and _localController ~= nil and _localController.MarkTrackBindingsSent ~= nil then
+				_localController:MarkTrackBindingsSent()
+			end
 		end
 	end)
 end
@@ -214,9 +252,14 @@ function ReplicationService.SendLocalPacket()
 		return
 	end
 
-	local packet = buildLocalPacket(true)
+	-- Manual flushes always include the full state so callers can use this as
+	-- a "force-sync" on character spawn / teleport / binding change.
+	local packet = buildLocalPacket(true, true)
 	if packet then
 		remoteEvent:FireServer(packet)
+		if _localController ~= nil and _localController.MarkTrackBindingsSent ~= nil then
+			_localController:MarkTrackBindingsSent()
+		end
 	end
 end
 

@@ -33,6 +33,10 @@ type ReplicationPacket = {
 	TrackBindings: {[string]: string}?,
 }
 
+export type ReplicationPacketOptions = {
+	IncludeTrackBindings: boolean?,
+}
+
 local ANIMATION_START_REPLICATION_WINDOW = 0.6
 
 export type BlendTreeResolver = (self: ControllerInstance, dt: number) -> NumberMap?
@@ -69,6 +73,13 @@ export type NewOptions = {
 	AutoStart: boolean?,
 	WeightSmoothingSpeed: number?,
 	ReplicationSeekMode: ReplicationSeekMode?,
+	-- Opt-in for TrackBindings replication.  Projects that don't use the
+	-- FluxaBindingCatalog / AssetManager pipeline don't want binding state
+	-- crossing the wire at all -- they load tracks by name on both sides
+	-- and peers have no resolver to turn incoming binding ids into assets.
+	-- Default off so existing setups migrate to the updated controller
+	-- without paying bandwidth or emitting "no resolver" warnings.
+	ReplicateTrackBindings: boolean?,
 	Drivers: AnyMap?,
 	Params: AnyMap?,
 	GlobalDriverReplication: DriverReplicationMap?,
@@ -116,11 +127,15 @@ export type ControllerInstance = {
 	SetLayerDriverReplication: (self: ControllerInstance, layerName: string, paramName: string, enabled: boolean) -> (),
 	GetLayerDriverReplication: (self: ControllerInstance, layerName: string, paramName: string) -> boolean,
 	MarkLayerAnimationStart: (self: ControllerInstance, layerName: string, animationName: string) -> number,
-	GetReplicationPacket: (self: ControllerInstance) -> ReplicationPacket,
+	GetReplicationPacket: (self: ControllerInstance, options: ReplicationPacketOptions?) -> ReplicationPacket,
 	ApplyReplicationPacket: (self: ControllerInstance, packet: ReplicationPacket) -> (),
     SetTrackBindingResolver: (self: ControllerInstance, resolver: TrackBindingResolver?) -> (),
     GetTrackBinding: (self: ControllerInstance, name: string) -> string?,
     GetTrackBindings: (self: ControllerInstance) -> {[string]: string},
+    IsTrackBindingsDirty: (self: ControllerInstance) -> boolean,
+    MarkTrackBindingsSent: (self: ControllerInstance) -> (),
+    SetTrackBindingsReplicationEnabled: (self: ControllerInstance, enabled: boolean) -> (),
+    GetTrackBindingsReplicationEnabled: (self: ControllerInstance) -> boolean,
 
 	LoadTrack: (self: ControllerInstance, name: string, asset: any, config: TrackConfig?) -> any,
 	SetTrackAsset: (self: ControllerInstance, name: string, asset: any, options: TrackSwapOptions?) -> any,
@@ -163,6 +178,8 @@ export type ControllerInstance = {
 	_smoothedTrackWeights: NumberMap,
 	_blendTrees: {[string]: BlendTreeResolver},
 	_trackBindings: {[string]: string},
+	_trackBindingsDirty: boolean,
+	_replicateTrackBindings: boolean,
 	_trackBindingResolver: TrackBindingResolver?,
 	_defaultReplicationSeekMode: ReplicationSeekMode,
 	_appliedReplicationAnimationStartTimes: {[string]: {[string]: number}},
@@ -449,7 +466,7 @@ local function blendLayerTracksIntoPose(controller: ControllerInstance, finalPos
 		end
 
 		local logicalWeight = controller._smoothedTrackWeights[trackName] or 0
-		local effectiveWeight = if logicalWeight > 0 then logicalWeight * track.Track.Weight else track.Track.Weight
+		local effectiveWeight = logicalWeight * track.Track.Weight
 		-- Always update to advance fade weight and animation time, even if we won't blend this frame.
 		local sample = track.Track:Update(dt)
 		local combinedWeight = clamp01(effectiveWeight * layer.Weight)
@@ -469,7 +486,12 @@ local function resolveTrackWeights(controller: ControllerInstance, dt: number): 
 	local resolved: NumberMap = {}
 
 	for _, trackName in ipairs(controller._trackNames) do
-		resolved[trackName] = clamp01(controller._trackTargets[trackName] or 0)
+		local trackState = controller._tracks[trackName]
+		if trackState ~= nil and trackState.AutoManage then
+			resolved[trackName] = 0
+		else
+			resolved[trackName] = clamp01(controller._trackTargets[trackName] or 0)
+		end
 	end
 
 	for _, resolver in pairs(controller._blendTrees) do
@@ -508,6 +530,8 @@ function FluxaController.new(options: NewOptions): ControllerInstance
 	self._smoothedTrackWeights = {}
 	self._blendTrees = {}
 	self._trackBindings = {}
+	self._trackBindingsDirty = true
+	self._replicateTrackBindings = options.ReplicateTrackBindings == true
 	self._trackBindingResolver = options.TrackBindingResolver
 	self._defaultReplicationSeekMode = normalizeReplicationSeekMode(options.ReplicationSeekMode)
 	self._appliedReplicationAnimationStartTimes = {}
@@ -691,7 +715,7 @@ function FluxaController.MarkLayerAnimationStart(self: ControllerInstance, layer
 	return timestamp
 end
 
-function FluxaController.GetReplicationPacket(self: ControllerInstance): ReplicationPacket
+function FluxaController.GetReplicationPacket(self: ControllerInstance, options: ReplicationPacketOptions?): ReplicationPacket
 	local now = getReplicationClock()
 	local layers: {[string]: LayerReplicationState} = {}
 	for layerName, layerState in pairs(self.Layers) do
@@ -701,12 +725,51 @@ function FluxaController.GetReplicationPacket(self: ControllerInstance): Replica
 		layers[layerName] = clonedLayerState
 	end
 
+	-- Track bindings are rarely mutated but cost bandwidth if included every
+	-- packet (30Hz by default).  Include by explicit request, otherwise only
+	-- when something has mutated since the last send.  Projects that haven't
+	-- opted into binding replication (ReplicateTrackBindings = false) never
+	-- include bindings regardless of the dirty flag so the feature is truly
+	-- opt-in.
+	local includeBindings = true
+	if not self._replicateTrackBindings then
+		includeBindings = false
+	elseif options ~= nil and options.IncludeTrackBindings ~= nil then
+		includeBindings = options.IncludeTrackBindings == true
+	else
+		includeBindings = self._trackBindingsDirty
+	end
+
+	local trackBindings: {[string]: string}? = nil
+	if includeBindings then
+		trackBindings = table.clone(self._trackBindings)
+	end
+
 	return {
 		Timestamp = now,
 		Drivers = collectReplicatedDrivers(self._drivers, self._globalDriverReplication),
 		Layers = layers,
-		TrackBindings = table.clone(self._trackBindings),
+		TrackBindings = trackBindings,
 	}
+end
+
+function FluxaController.IsTrackBindingsDirty(self: ControllerInstance): boolean
+	return self._trackBindingsDirty == true
+end
+
+function FluxaController.MarkTrackBindingsSent(self: ControllerInstance)
+	self._trackBindingsDirty = false
+end
+
+function FluxaController.SetTrackBindingsReplicationEnabled(self: ControllerInstance, enabled: boolean)
+	self._replicateTrackBindings = enabled == true
+	if enabled then
+		self._trackBindingsDirty = true
+	end
+end
+
+function FluxaController.GetTrackBindingsReplicationEnabled(self: ControllerInstance): boolean
+	return self._replicateTrackBindings == true
 end
 
 function FluxaController.ApplyReplicationPacket(self: ControllerInstance, packet: ReplicationPacket)
@@ -717,9 +780,19 @@ function FluxaController.ApplyReplicationPacket(self: ControllerInstance, packet
 	if type(packet.TrackBindings) == "table" then
 		local incomingBindings = packet.TrackBindings :: {[string]: string}
 
-		for trackName in pairs(self._trackBindings) do
-			if incomingBindings[trackName] == nil then
-				self:UnloadTrack(trackName)
+		-- An empty incoming map is almost always a transient sender state
+		-- (e.g. a controller that's mid-rebuild during a respawn). Treat it
+		-- as "no information" instead of nuking every local track.  When the
+		-- sender legitimately has zero bindings they can still send the
+		-- individual unload by simply not repopulating -- peers won't
+		-- spuriously destroy state during respawns.
+		local hasAnyIncoming = next(incomingBindings) ~= nil
+
+		if hasAnyIncoming then
+			for trackName in pairs(self._trackBindings) do
+				if incomingBindings[trackName] == nil then
+					self:UnloadTrack(trackName)
+				end
 			end
 		end
 
@@ -736,14 +809,36 @@ function FluxaController.ApplyReplicationPacket(self: ControllerInstance, packet
 			if self._trackBindingResolver ~= nil then
 				local asset, trackConfig = self._trackBindingResolver(self, trackName, bindingId, currentBindingId)
 				if asset ~= nil then
-					local config = trackConfig or {}
-					(config :: any).BindingId = bindingId
-					self:LoadTrack(trackName, asset, config)
+					local configAny: any = trackConfig or {}
+					configAny.BindingId = bindingId
+					configAny.Asset = asset
+
+					if self._tracks[trackName] ~= nil then
+						-- Live track: swap the asset in-place so peers keep phase,
+						-- playback state and smoothed weight across a binding swap
+						-- (e.g. gun variant changes, walk->walk_pistol).
+						local swapOptions: TrackSwapOptions = {
+							PreservePhase = true,
+							BindingId = bindingId,
+							TrackOptions = configAny.TrackOptions,
+						}
+						self:SetTrackAsset(trackName, asset, swapOptions)
+					else
+						self:LoadTrack(trackName, asset, configAny :: TrackConfig)
+					end
 				else
+					warn(("FluxaController: TrackBindingResolver returned nil for track '%s' binding '%s'; unloading"):format(trackName, bindingId))
 					self:UnloadTrack(trackName)
 				end
 			else
+				-- No resolver registered: record the incoming binding so peers
+				-- can still inspect it (e.g. tooling) but we can't apply a new
+				-- asset.  Warn once per mismatch so integration bugs surface.
+				if currentBindingId ~= bindingId then
+					warn(("FluxaController: received binding '%s' for track '%s' but no TrackBindingResolver is registered"):format(bindingId, trackName))
+				end
 				self._trackBindings[trackName] = bindingId
+				self._trackBindingsDirty = true
 			end
 		end
 	end
@@ -876,7 +971,10 @@ function FluxaController.LoadTrack(self: ControllerInstance, name: string, asset
 		ReplicationSeekMode = replicationSeekMode,
 	}
 	self._tracks[name] = nextTrackState
-	self._trackBindings[name] = bindingId
+	if self._trackBindings[name] ~= bindingId then
+		self._trackBindings[name] = bindingId
+		self._trackBindingsDirty = true
+	end
 	local trackInstance = track :: any
 	trackInstance.AutoReplicate = autoReplicate
 
@@ -951,7 +1049,10 @@ function FluxaController.UnloadTrack(self: ControllerInstance, name: string)
 	removeKey(self._trackNames, name)
 	self._trackTargets[name] = nil
 	self._smoothedTrackWeights[name] = nil
-	self._trackBindings[name] = nil
+	if self._trackBindings[name] ~= nil then
+		self._trackBindings[name] = nil
+		self._trackBindingsDirty = true
+	end
 end
 
 function FluxaController.SetTrackLayer(self: ControllerInstance, name: string, layerName: string)
@@ -1137,7 +1238,7 @@ function FluxaController.Start(self: ControllerInstance)
 		return
 	end
 
-	self._updateConnection = RunService.RenderStepped:Connect(function(dt)
+	self._updateConnection = RunService.PreSimulation:Connect(function(dt)
 		self:Step(dt)
 	end)
 end
@@ -1169,6 +1270,7 @@ function FluxaController.Destroy(self: ControllerInstance)
 	table.clear(self._smoothedTrackWeights)
 	table.clear(self._blendTrees)
 	table.clear(self._trackBindings)
+	self._trackBindingsDirty = false
 	table.clear(self._appliedReplicationAnimationStartTimes)
 	table.clear(self._drivers)
 	table.clear(self._globalDriverReplication)

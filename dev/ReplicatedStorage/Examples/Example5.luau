@@ -1,5 +1,6 @@
 --!nonstrict
--- Example3: single controller script with external-style drivers using layer state and layer blend params.
+-- Example5: Example4-style binding manager demo using Example3's state machine and animations,
+-- plus FluxaService registration for players and server-owned NPCs.
 
 local module = {}
 
@@ -8,13 +9,17 @@ local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Workspace = game:GetService("Workspace")
+local CollectionService = game:GetService("CollectionService")
 
 local LocalPlayer = Players.LocalPlayer
 
 local Fluxa = require(ReplicatedStorage.Packages.fluxa)
-local AnimationAsset = Fluxa.AnimationAsset
 local FluxaController = Fluxa.FluxaController
+local FluxaAssetManager = Fluxa.FluxaAssetManager
+local FluxaBindingSetManager = Fluxa.FluxaBindingSetManager
 local FluxaReplicationService = Fluxa.FluxaReplicationService
+local FluxaService = Fluxa.FluxaService
+local Example5BindingCatalog = require(script.Parent.Example5BindingCatalog)
 
 local SLOW_WALK_SPEED = 3
 local BASE_WALK_SPEED = 3
@@ -38,15 +43,20 @@ local CLIMB_MAX_CYCLE_RATE = 1.8
 local MAX_DELTA_AIM_PITCH_DEG = 65
 local MAX_AIM_PITCH_DEG = 65
 local MIN_AIM_PITCH_DEG = -65
-local AIM_PITCH_RISE_SPEED = 12   -- how fast influence rises while attack plays
-local AIM_PITCH_FADE_SPEED = 2.5  -- how fast influence decays after (~0.4s tail)
-local AIM_PITCH_SMOOTH_SPEED = 14 -- smooth camera pitch input to avoid jittery tail artifacts
+local AIM_PITCH_RISE_SPEED = 12
+local AIM_PITCH_FADE_SPEED = 2.5
+local AIM_PITCH_SMOOTH_SPEED = 14
+local FLUXA_NPC_TAG = "FluxaNPC"
+local FLUXA_NPC_ID_ATTRIBUTE = "FluxaNPCId"
 
 local _controller = nil
 local _remoteControllers = {}
+local _npcControllers = {}
 local _connections = {}
 local _localCharacterConnections = {}
 local _localControllerReplicationEnabled = true
+local _sharedAssetManager = nil
+local _sharedBindingSetManager = nil
 
 module.OwnsCharacterLifecycle = true
 
@@ -97,7 +107,6 @@ end
 local function getLandMovingSpeedAlpha(planarSpeed)
 	local speed = math.max(0, planarSpeed)
 	local half = math.max(1e-3, LAND_FADE_HALF_SPEED)
-	-- Continuous 0..1 response: alpha is 0.5 when speed == LAND_FADE_HALF_SPEED.
 	return math.clamp(speed / (speed + half), 0, 1)
 end
 
@@ -127,19 +136,36 @@ local function disconnectAll()
 	table.clear(_connections)
 end
 
-local function loadAssets(folder: Instance?)
-	local assets = {}
-	if not folder then
-		return assets
+local function createBindingSetManager(folder: Instance?)
+	if _sharedBindingSetManager ~= nil then
+		return _sharedBindingSetManager
 	end
 
-	for _, inst in ipairs(folder:GetChildren()) do
-		if inst:IsA("KeyframeSequence") then
-			assets[inst.Name] = AnimationAsset.new(inst, inst.Name)
+	_sharedAssetManager = _sharedAssetManager or FluxaAssetManager.new()
+	_sharedBindingSetManager = FluxaBindingSetManager.new({
+		Catalog = Example5BindingCatalog,
+		AssetManager = _sharedAssetManager,
+		SourceContainer = folder,
+	})
+
+	return _sharedBindingSetManager
+end
+
+local function createInputDriver(controller, connectFn)
+	local register = connectFn or connect
+	register(UserInputService.InputBegan, function(input, gameProcessed)
+		if gameProcessed then
+			return
 		end
-	end
-
-	return assets
+		if input.KeyCode == SHIFT_KEY then
+			setBaseBlend(controller, "ShiftHeld", true)
+		end
+	end)
+	register(UserInputService.InputEnded, function(input: InputObject, _: boolean)
+		if input.KeyCode == SHIFT_KEY then
+			setBaseBlend(controller, "ShiftHeld", false)
+		end
+	end)
 end
 
 local function createMovementDriver(controller, humanoid, root, connectFn)
@@ -204,24 +230,7 @@ local function createMovementDriver(controller, humanoid, root, connectFn)
 	end)
 end
 
-local function createInputDriver(controller, connectFn)
-	local register = connectFn or connect
-	register(UserInputService.InputBegan, function(input, gameProcessed)
-		if gameProcessed then
-			return
-		end
-		if input.KeyCode == SHIFT_KEY then
-			setBaseBlend(controller, "ShiftHeld", true)
-		end
-	end)
-	register(UserInputService.InputEnded, function(input: InputObject, _: boolean)
-		if input.KeyCode == SHIFT_KEY then
-			setBaseBlend(controller, "ShiftHeld", false)
-		end
-	end)
-end
-
-local function createHumanoidStateDriver(controller, humanoid, connectFn)
+local function createHumanoidStateDriver(controller, humanoid, flushPacket, connectFn)
 	local register = connectFn or connect
 	register(humanoid.StateChanged, function(_old, new)
 		local now = os.clock()
@@ -234,7 +243,9 @@ local function createHumanoidStateDriver(controller, humanoid, connectFn)
 			airState = setBaseState(controller, "Jump")
 			controller:MarkLayerAnimationStart("Base", "Jump")
 			controller:Play("Jump")
-			FluxaReplicationService.SendLocalPacket()
+			if flushPacket then
+				flushPacket()
+			end
 			controller:Stop("Land", 0.2)
 			controller:Stop("Fall", 0.2)
 			controller:Stop("Climb", 0.2)
@@ -259,31 +270,27 @@ local function createHumanoidStateDriver(controller, humanoid, connectFn)
 			controller:Stop("Jump", 0.2)
 			controller:Stop("Climb", 0.2)
 
-			local canTriggerLand = wasAirborne
-				and (now - lastLandTriggerTime) >= LAND_RETRIGGER_COOLDOWN
-
+			local canTriggerLand = wasAirborne and (now - lastLandTriggerTime) >= LAND_RETRIGGER_COOLDOWN
 			if canTriggerLand then
 				airState = setBaseState(controller, "Ground")
 				wasAirborne = setBaseBlend(controller, "WasAirborne", false)
 				lastLandTriggerTime = setBaseBlend(controller, "LastLandTriggerTime", now)
 				controller:MarkLayerAnimationStart("Landing", "Land")
-				print("land for ", humanoid.Parent.Name)
 				controller:Play("Land")
-				FluxaReplicationService.SendLocalPacket()
+				if flushPacket then
+					flushPacket()
+				end
 			elseif airState ~= "Jump" and airState ~= "Fall" then
 				airState = setBaseState(controller, "Ground")
 				wasAirborne = setBaseBlend(controller, "WasAirborne", false)
 			end
-		elseif new == Enum.HumanoidStateType.Running
-			or new == Enum.HumanoidStateType.RunningNoPhysics
-		then
+		elseif new == Enum.HumanoidStateType.Running or new == Enum.HumanoidStateType.RunningNoPhysics then
 			controller:Stop("Fall", 0.2)
 			controller:Stop("Jump", 0.2)
 			controller:Stop("Climb", 0.2)
 			if airState ~= "Jump" and airState ~= "Fall" then
 				airState = setBaseState(controller, "Ground")
 				wasAirborne = setBaseBlend(controller, "WasAirborne", false)
-				
 			end
 		end
 	end)
@@ -321,7 +328,6 @@ local function disableBuiltInCharacterAnimation(character: Model)
 			animator:Destroy()
 		end
 
-		--Disable humanoid states that aren't needed for this Character Controller
 		humanoid:SetStateEnabled(Enum.HumanoidStateType.Ragdoll, false)
 		humanoid:SetStateEnabled(Enum.HumanoidStateType.FallingDown, false)
 		humanoid:SetStateEnabled(Enum.HumanoidStateType.GettingUp, false)
@@ -336,7 +342,7 @@ local function disableBuiltInCharacterAnimation(character: Model)
 	end
 end
 
-local function createFluxaController(character: Model, assets, isLocalController: boolean)
+local function createFluxaController(character: Model, bindingSetManager, isLocalController: boolean)
 	local upperBodyMask = {
 		"UpperTorso",
 		"Torso",
@@ -359,12 +365,24 @@ local function createFluxaController(character: Model, assets, isLocalController
 	local landingWeightSmoothed = 0
 	local smoothedAimPitch = 0
 	local lastObservedBaseState = "Ground"
+	local trackConfigs = {
+		Idle = { Layer = "Base", AutoManage = true, InitialWeight = 1, TrackOptions = { Looped = true, Speed = 1, FadeInTime = 0.2, FadeOutTime = 0.2 } },
+		Walk = { Layer = "Base", AutoManage = true, PreservePhaseOnSwap = true, TrackOptions = { Looped = true, Speed = 1, FadeInTime = 0.2, FadeOutTime = 0.2 } },
+		Run = { Layer = "Base", AutoManage = true, PreservePhaseOnSwap = true, TrackOptions = { Looped = true, Speed = 1, FadeInTime = 0.18, FadeOutTime = 0.2 } },
+		SlowWalk = { Layer = "Base", AutoManage = true, PreservePhaseOnSwap = true, TrackOptions = { Looped = true, Speed = 1, FadeInTime = 0.2, FadeOutTime = 0.24 } },
+		Jump = { Layer = "Base", AutoManage = false, ReplicationSeekMode = "Never", TrackOptions = { Looped = false, Speed = 1, FadeInTime = 0.08, FadeOutTime = 0.16 } },
+		Fall = { Layer = "Base", AutoManage = true, TrackOptions = { Looped = true, Speed = 1, FadeInTime = 0.14, FadeOutTime = 0.18 } },
+		Land = { Layer = "Landing", AutoManage = false, ReplicationSeekMode = "Never", TrackOptions = { Looped = false, Speed = 1, FadeInTime = 0.08, FadeOutTime = 0.08 } },
+		Climb = { Layer = "Base", AutoManage = true, PreservePhaseOnSwap = true, TrackOptions = { Looped = true, Speed = 1, FadeInTime = 0.18, FadeOutTime = 0.22 } },
+		Attack = { Layer = "UpperBody", AutoManage = false, InitialWeight = 0, ReplicationSeekMode = "Never", TrackOptions = { Looped = false, Speed = 1, FadeInTime = 0.08, FadeOutTime = 0.14 } },
+	}
 
 	local controller = FluxaController.new({
 		Character = character,
 		AutoApplyPose = true,
 		AutoStart = true,
 		ReplicationSeekMode = "LoopingOnly",
+		ReplicateTrackBindings = true,
 		OnPreStep = function(innerController, dt)
 			local currentBaseState = getBaseState(innerController)
 			local smoothedPlanarSpeed = getLayerBlend(innerController, "Base", "SmoothedPlanarSpeed", 0)
@@ -376,14 +394,9 @@ local function createFluxaController(character: Model, assets, isLocalController
 				lastObservedBaseState = currentBaseState
 			end
 
-			-- Phase-drive locomotion tracks so blends stay foot-synced across walk/run weights.
 			local locomotionCycleRate = 0
 			if moving then
-				locomotionCycleRate = math.clamp(
-					smoothedPlanarSpeed / BASE_WALK_SPEED,
-					LOCOMOTION_MIN_CYCLE_RATE,
-					LOCOMOTION_MAX_CYCLE_RATE
-				)
+				locomotionCycleRate = math.clamp(smoothedPlanarSpeed / BASE_WALK_SPEED, LOCOMOTION_MIN_CYCLE_RATE, LOCOMOTION_MAX_CYCLE_RATE)
 			end
 
 			if slowWalkTrack then
@@ -404,8 +417,7 @@ local function createFluxaController(character: Model, assets, isLocalController
 				local speedAlpha = getLandMovingSpeedAlpha(smoothedPlanarSpeed)
 				landingWeight = math.clamp(1 - math.pow(speedAlpha, LAND_WEIGHT_SPEED_EASE_POWER), 0, 1)
 			end
-			landingWeightSmoothed += (landingWeight - landingWeightSmoothed)
-				* math.clamp(dt * LAND_LAYER_WEIGHT_SMOOTH_SPEED, 0, 1)
+			landingWeightSmoothed += (landingWeight - landingWeightSmoothed) * math.clamp(dt * LAND_LAYER_WEIGHT_SMOOTH_SPEED, 0, 1)
 			innerController:SetLayerWeight("Landing", landingWeightSmoothed)
 
 			if isLocalController then
@@ -416,7 +428,6 @@ local function createFluxaController(character: Model, assets, isLocalController
 				local targetInfluence = 0
 				if isAttackPlaying then
 					local trackWeight = math.clamp(attackTrack.Weight, 0, 1)
-					-- Bootstrap from zero: with layer weight at 0, track weight cannot rise until layer runs once.
 					if trackWeight <= 0 and attackPoseInfluence <= 0 then
 						targetInfluence = math.max(targetInfluence, math.min(1, dt * AIM_PITCH_RISE_SPEED))
 					end
@@ -448,7 +459,6 @@ local function createFluxaController(character: Model, assets, isLocalController
 				end
 			end
 
-			-- Keep Override mode, but gate how much this layer can override Base.
 			innerController:SetLayerWeight("UpperBody", attackPoseInfluence)
 		end,
 		OnPostBlend = function(innerController, finalPose, _dt)
@@ -457,7 +467,6 @@ local function createFluxaController(character: Model, assets, isLocalController
 			if currentBaseState ~= "Jump" and currentBaseState ~= "Fall" and math.abs(turnLean) > 1e-4 then
 				local upperLean = CFrame.Angles(0, 0, -turnLean)
 				local lowerLean = CFrame.Angles(0, 0, -turnLean * 0.35)
-
 				if finalPose.UpperTorso then
 					finalPose.UpperTorso = finalPose.UpperTorso * upperLean
 				end
@@ -470,7 +479,6 @@ local function createFluxaController(character: Model, assets, isLocalController
 			end
 
 			if attackPoseInfluence > 0 then
-				-- Blend arm reset with influence instead of hard overriding, so it fades out cleanly.
 				if finalPose.RightLowerArm then
 					finalPose.RightLowerArm = finalPose.RightLowerArm:Lerp(CFrame.identity, attackPoseInfluence)
 				end
@@ -484,7 +492,6 @@ local function createFluxaController(character: Model, assets, isLocalController
 				local pitchOffset = CFrame.Angles(pitchRadians, 0, 0)
 
 				if finalPose.UpperTorso then
-					-- Blend out lower-torso compensation during fade so upper torso returns smoothly without snapping.
 					if finalPose.LowerTorso then
 						local upperBase = finalPose.UpperTorso
 						local compensatedUpper = finalPose.LowerTorso.Rotation:Inverse() * upperBase
@@ -519,6 +526,8 @@ local function createFluxaController(character: Model, assets, isLocalController
 	setBaseBlend(controller, "LastYaw", getYaw(character:GetPivot()))
 	setBaseBlend(controller, "TurnLean", 0)
 
+	bindingSetManager:AttachController(controller)
+
 	local function updateTrackRef(trackName: string, track: any)
 		if trackName == "Walk" then
 			walkTrack = track
@@ -535,79 +544,14 @@ local function createFluxaController(character: Model, assets, isLocalController
 		end
 	end
 
-	local function loadTrackFromBinding(trackName: string, trackConfig)
-		local bindingId = trackConfig.BindingId
-		local asset = assets[bindingId]
-		if asset == nil then
-			warn(("Missing binding '%s' for track '%s'"):format(tostring(bindingId), trackName))
-			return nil
+	for trackName, trackConfig in pairs(trackConfigs) do
+		local initialConfig = table.clone(trackConfig)
+		initialConfig.BindingId = Example5BindingCatalog:GetInitialTrackBinding(trackName)
+		local track = bindingSetManager:LoadTrack(controller, trackName, initialConfig)
+		if track ~= nil then
+			updateTrackRef(trackName, track)
 		end
-
-		local config = table.clone(trackConfig)
-		local track = controller:LoadTrack(trackName, asset, config)
-		updateTrackRef(trackName, track)
-		return track
 	end
-
-	loadTrackFromBinding("Idle", {
-		BindingId = "Idle",
-		Layer = "Base",
-		AutoManage = true,
-		InitialWeight = 1,
-		TrackOptions = { Looped = true, Speed = 1, FadeInTime = 0.2, FadeOutTime = 0.2 },
-	})
-	loadTrackFromBinding("Walk", {
-		BindingId = "Walk",
-		Layer = "Base",
-		AutoManage = true,
-		TrackOptions = { Looped = true, Speed = 1, FadeInTime = 0.2, FadeOutTime = 0.2 },
-	})
-	loadTrackFromBinding("Run", {
-		BindingId = "Run",
-		Layer = "Base",
-		AutoManage = true,
-		TrackOptions = { Looped = true, Speed = 1, FadeInTime = 0.18, FadeOutTime = 0.2 },
-	})
-	loadTrackFromBinding("SlowWalk", {
-		BindingId = "SlowWalk",
-		Layer = "Base",
-		AutoManage = true,
-		TrackOptions = { Looped = true, Speed = 1, FadeInTime = 0.2, FadeOutTime = 0.24 },
-	})
-	loadTrackFromBinding("Jump", {
-		BindingId = "Jump",
-		Layer = "Base",
-		AutoManage = false,
-		ReplicationSeekMode = "Never",
-		TrackOptions = { Looped = false, Speed = 1, FadeInTime = 0.08, FadeOutTime = 0.16 },
-	})
-	loadTrackFromBinding("Fall", {
-		BindingId = "Fall",
-		Layer = "Base",
-		AutoManage = true,
-		TrackOptions = { Looped = true, Speed = 1, FadeInTime = 0.14, FadeOutTime = 0.18 },
-	})
-	loadTrackFromBinding("Land", {
-		BindingId = "Land",
-		Layer = "Landing",
-		AutoManage = false,
-		ReplicationSeekMode = "Never",
-		TrackOptions = { Looped = false, Speed = 1, FadeInTime = 0.08, FadeOutTime = 0.08 },
-	})
-	loadTrackFromBinding("Climb", {
-		BindingId = "Climb",
-		Layer = "Base",
-		AutoManage = true,
-		TrackOptions = { Looped = true, Speed = 1, FadeInTime = 0.18, FadeOutTime = 0.22 },
-	})
-	loadTrackFromBinding("Attack", {
-		BindingId = "Attack",
-		Layer = "UpperBody",
-		AutoManage = false,
-		InitialWeight = 0,
-		ReplicationSeekMode = "Never",
-		TrackOptions = { Looped = false, Speed = 1, FadeInTime = 0.08, FadeOutTime = 0.14 },
-	})
 
 	controller:CreateBlendTree("Locomotion", function(innerController, _dt)
 		local speed = getLayerBlend(innerController, "Base", "Speed", 0)
@@ -618,72 +562,15 @@ local function createFluxaController(character: Model, assets, isLocalController
 		local direction = getLayerBlend(innerController, "Base", "Direction", Vector3.zero)
 		local moveMag = math.min(1, direction.Magnitude)
 
-		if airState == "Jump" then
-			return {
-				Idle = 0,
-				SlowWalk = 0,
-				Walk = 0,
-				Run = 0,
-				Jump = 1,
-				Fall = 0,
-				Climb = 0,
-			}
-		elseif airState == "Fall" then
-			return {
-				Idle = 0,
-				SlowWalk = 0,
-				Walk = 0,
-				Run = 0,
-				Jump = 0,
-				Fall = 1,
-				Climb = 0,
-			}
-		elseif airState == "Climb" then
-			return {
-				Idle = 0,
-				SlowWalk = 0,
-				Walk = 0,
-				Run = 0,
-				Jump = 0,
-				Fall = 0,
-				Climb = 1,
-			}
-		end
-
-		if not moving then
-			return {
-				Idle = 1,
-				SlowWalk = 0,
-				Walk = 0,
-				Run = 0,
-				Jump = 0,
-				Fall = 0,
-				Climb = 0,
-			}
-		end
-
+		if airState == "Jump" then return { Idle = 0, SlowWalk = 0, Walk = 0, Run = 0, Jump = 1, Fall = 0, Climb = 0 } end
+		if airState == "Fall" then return { Idle = 0, SlowWalk = 0, Walk = 0, Run = 0, Jump = 0, Fall = 1, Climb = 0 } end
+		if airState == "Climb" then return { Idle = 0, SlowWalk = 0, Walk = 0, Run = 0, Jump = 0, Fall = 0, Climb = 1 } end
+		if not moving then return { Idle = 1, SlowWalk = 0, Walk = 0, Run = 0, Jump = 0, Fall = 0, Climb = 0 } end
 		if shiftHeld then
 			local slowWeight = math.clamp(speed / SLOW_WALK_SPEED, 0, 1)
-			return {
-				Idle = 1 - slowWeight,
-				SlowWalk = slowWeight,
-				Walk = 0,
-				Run = 0,
-				Jump = 0,
-				Fall = 0,
-				Climb = 0,
-			}
+			return { Idle = 1 - slowWeight, SlowWalk = slowWeight, Walk = 0, Run = 0, Jump = 0, Fall = 0, Climb = 0 }
 		end
-
-		return {
-			Idle = 1 - moveMag,
-			SlowWalk = 0,
-			Walk = moveMag * (1 - momentum),
-			Run = moveMag * momentum,
-			Jump = 0,
-			Fall = 0,
-			Climb = 0,
-		}
+		return { Idle = 1 - moveMag, SlowWalk = 0, Walk = moveMag * (1 - momentum), Run = moveMag * momentum, Jump = 0, Fall = 0, Climb = 0 }
 	end)
 
 	return controller
@@ -692,12 +579,63 @@ end
 local function destroyRemoteController(player)
 	local controller = _remoteControllers[player]
 	if controller then
+		FluxaReplicationService.ClearRemoteController(player)
+		FluxaService.UnregisterController(player)
 		controller:Destroy()
 		_remoteControllers[player] = nil
 	end
 end
 
-local function bootstrapRemotePlayer(player, assets)
+local function destroyNPCController(id)
+	local controller = _npcControllers[id]
+	if controller then
+		FluxaService.UnregisterController(id)
+		controller:Destroy()
+		_npcControllers[id] = nil
+	end
+end
+
+local function getNpcIdFromModel(npcCharacter: Model): string?
+	local value = npcCharacter:GetAttribute(FLUXA_NPC_ID_ATTRIBUTE)
+	if type(value) == "string" and value ~= "" then
+		return value
+	end
+	return nil
+end
+
+local function destroyNPCControllerByModel(npcCharacter: Model)
+	local id = getNpcIdFromModel(npcCharacter)
+	if id ~= nil then
+		destroyNPCController(id)
+		return
+	end
+
+	for npcId, controller in pairs(_npcControllers) do
+		if controller ~= nil and controller.Character == npcCharacter then
+			destroyNPCController(npcId)
+			break
+		end
+	end
+end
+
+local function bootstrapTaggedNPC(npcCharacter: Model, bindingSetManager)
+	local id = getNpcIdFromModel(npcCharacter)
+	if id == nil then
+		return
+	end
+
+	destroyNPCController(id)
+	npcCharacter:WaitForChild("Humanoid")
+	npcCharacter:WaitForChild("HumanoidRootPart")
+	npcCharacter:WaitForChild("Head")
+	disableBuiltInCharacterAnimation(npcCharacter)
+
+	local npcController = createFluxaController(npcCharacter, bindingSetManager, false)
+	_npcControllers[id] = npcController
+	FluxaService.RegisterController(id, npcController)
+end
+
+local function bootstrapRemotePlayer(player, bindingSetManager)
 	if player == LocalPlayer then
 		return
 	end
@@ -710,8 +648,9 @@ local function bootstrapRemotePlayer(player, assets)
 		character:WaitForChild("Head")
 		disableBuiltInCharacterAnimation(character)
 
-		local remoteController = createFluxaController(character, assets, false)
+		local remoteController = createFluxaController(character, bindingSetManager, false)
 		_remoteControllers[player] = remoteController
+		FluxaService.RegisterController(player, remoteController)
 		FluxaReplicationService.StartRemoteReplication(remoteController, player)
 	end
 
@@ -728,16 +667,6 @@ local function bootstrapRemotePlayer(player, assets)
 	end
 end
 
-local function destroyLocalController()
-	disconnectLocalCharacterConnections()
-	FluxaReplicationService.StopLocalReplication()
-
-	if _controller then
-		_controller:Destroy()
-		_controller = nil
-	end
-end
-
 function module:Start(_clientScript: LocalScript)
 	if #_connections > 0 then
 		return
@@ -747,44 +676,69 @@ function module:Start(_clientScript: LocalScript)
 	if not animFolder then
 		animFolder = ReplicatedStorage:FindFirstChild("Example2Animations_R15")
 	end
-	local assets = loadAssets(animFolder)
+	if not animFolder then
+		warn("Example5 requires Example3Animations_R15 or Example2Animations_R15 in ReplicatedStorage.")
+		return
+	end
+
+	local bindingSetManager = createBindingSetManager(animFolder)
+
+	local function destroyLocalController()
+		disconnectLocalCharacterConnections()
+		FluxaReplicationService.StopLocalReplication()
+
+		if _controller then
+			FluxaService.UnregisterController(LocalPlayer)
+			_controller:Destroy()
+			_controller = nil
+		end
+	end
 
 	local function setupLocalCharacter(character: Model)
 		destroyLocalController()
 		disableBuiltInCharacterAnimation(character)
-	local humanoid = character:WaitForChild("Humanoid")
-	local root = character:WaitForChild("HumanoidRootPart")
 
-	local animator = humanoid:FindFirstChildOfClass("Animator")
-	if animator then
-		animator:Destroy()
+		local humanoid = character:WaitForChild("Humanoid")
+		local root = character:WaitForChild("HumanoidRootPart")
+
+		local animator = humanoid:FindFirstChildOfClass("Animator")
+		if animator then
+			animator:Destroy()
+		end
+
+		_controller = createFluxaController(character, bindingSetManager, true)
+		FluxaService.RegisterController(LocalPlayer, _controller)
+
+		setBaseBlend(_controller, "LastYaw", getYaw(root.CFrame))
+		createInputDriver(_controller, connectLocal)
+		createHumanoidStateDriver(_controller, humanoid, function()
+			FluxaReplicationService.SendLocalPacket()
+		end, connectLocal)
+		createMovementDriver(_controller, humanoid, root, connectLocal)
+		createCombatDriver(_controller, connectLocal)
+		createCameraDriver(_controller, connectLocal)
+		FluxaReplicationService.SetLocalReplicationEnabled(_localControllerReplicationEnabled)
+		if _localControllerReplicationEnabled then
+			FluxaReplicationService.StartLocalReplication(_controller)
+		end
 	end
 
-	_controller = createFluxaController(character, assets, true)
-
-	setBaseBlend(_controller, "LastYaw", getYaw(root.CFrame))
-
-	createInputDriver(_controller, connectLocal)
-	createHumanoidStateDriver(_controller, humanoid, connectLocal)
-	createMovementDriver(_controller, humanoid, root, connectLocal)
-	createCombatDriver(_controller, connectLocal)
-	createCameraDriver(_controller, connectLocal)
-	FluxaReplicationService.SetLocalReplicationEnabled(_localControllerReplicationEnabled)
-	if _localControllerReplicationEnabled then
-		FluxaReplicationService.StartLocalReplication(_controller)
-	end
+	for _, inst in ipairs(CollectionService:GetTagged(FLUXA_NPC_TAG)) do
+		if inst:IsA("Model") then
+			bootstrapTaggedNPC(inst, bindingSetManager)
+		end
 	end
 
-	for _, player in ipairs(Players:GetPlayers()) do
-		bootstrapRemotePlayer(player, assets)
-	end
-
-	connect(Players.PlayerAdded, function(player)
-		bootstrapRemotePlayer(player, assets)
+	connect(CollectionService:GetInstanceAddedSignal(FLUXA_NPC_TAG), function(inst)
+		if inst:IsA("Model") then
+			bootstrapTaggedNPC(inst, bindingSetManager)
+		end
 	end)
 
-	connect(Players.PlayerRemoving, function(player)
-		destroyRemoteController(player)
+	connect(CollectionService:GetInstanceRemovedSignal(FLUXA_NPC_TAG), function(inst)
+		if inst:IsA("Model") then
+			destroyNPCControllerByModel(inst)
+		end
 	end)
 
 	connect(LocalPlayer.CharacterAdded, function(character)
@@ -798,15 +752,35 @@ function module:Start(_clientScript: LocalScript)
 	local currentCharacter = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
 	setupLocalCharacter(currentCharacter)
 
-	print("Example3 loaded! Set StarterPlayerScripts.Client.ex = 3 to use this controller demo.")
+	for _, player in ipairs(Players:GetPlayers()) do
+		bootstrapRemotePlayer(player, bindingSetManager)
+	end
+	connect(Players.PlayerAdded, function(player)
+		bootstrapRemotePlayer(player, bindingSetManager)
+	end)
+	connect(Players.PlayerRemoving, function(player)
+		destroyRemoteController(player)
+	end)
+
+	print("Example5 loaded! Set StarterPlayerScripts.Client.ex = 5 to use binding-manager + FluxaService demo with server NPCs.")
 end
 
 function module:Destroy()
-	destroyLocalController()
+	disconnectLocalCharacterConnections()
 	disconnectAll()
+	FluxaReplicationService.StopLocalReplication()
 
-	for player, _ in pairs(_remoteControllers) do
+	if _controller then
+		FluxaService.UnregisterController(LocalPlayer)
+		_controller:Destroy()
+		_controller = nil
+	end
+
+	for player in pairs(_remoteControllers) do
 		destroyRemoteController(player)
+	end
+	for id in pairs(_npcControllers) do
+		destroyNPCController(id)
 	end
 end
 
