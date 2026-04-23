@@ -321,6 +321,8 @@ local function disableBuiltInCharacterAnimation(character: Model)
 			animator:Destroy()
 		end
 
+		humanoid.AutoRotate = false
+
 		--Disable humanoid states that aren't needed for this Character Controller
 		humanoid:SetStateEnabled(Enum.HumanoidStateType.Ragdoll, false)
 		humanoid:SetStateEnabled(Enum.HumanoidStateType.FallingDown, false)
