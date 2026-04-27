@@ -22,11 +22,6 @@ The following API found in this documentation is grouped by ModuleScript.
 | `UniversalJointWriter` | `Fluxa.UniversalJointWriter` | Write a pose to a character's joints |
 | `FluxaController` | `Fluxa.FluxaController` | Full animation graph with tracks, layers, blend trees, and replication |
 | `FluxaReplicationService` | `Fluxa.FluxaReplicationService` | Cross-client animation state replication |
-| `IK.CCD` | `Fluxa.IK.CCD` | Cyclic Coordinate Descent IK solver |
-| `IK.FABRIK` | `Fluxa.IK.FABRIK` | FABRIK IK solver |
-| `IK.FootPlanting` | `Fluxa.IK.FootPlanting` | Foot planting IK |
-| `IK.LookAt` | `Fluxa.IK.LookAt` | Look-at IK solver |
-| `IK.TwoBoneIK` | `Fluxa.IK.TwoBoneIK` | Two-bone IK solver |
 
 ## Layer Stack
 

@@ -1238,7 +1238,8 @@ function FluxaController.Start(self: ControllerInstance)
 		return
 	end
 
-	self._updateConnection = RunService.PreSimulation:Connect(function(dt)
+	-- Allows for existence of Roblox Animator and AnimationController on the same character, stepping after Roblox's built-in animation system to ensure our poses apply on top, but allows for IKControl instances to still run overtop of Fluxa!!! :D
+	self._updateConnection = RunService.Stepped:Connect(function(_t, dt)
 		self:Step(dt)
 	end)
 end

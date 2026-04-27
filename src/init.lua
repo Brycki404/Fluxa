@@ -13,11 +13,4 @@ Fluxa.FluxaController = require(script.FluxaController)
 Fluxa.FluxaReplicationService = require(script.FluxaReplicationService)
 Fluxa.FluxaService = require(script.FluxaService)
 
-Fluxa.IK = {}
-Fluxa.IK.CCD = require(script.IK.CCD)
-Fluxa.IK.FABRIK = require(script.IK.FABRIK)
-Fluxa.IK.FootPlanting = require(script.IK.FootPlanting)
-Fluxa.IK.LookAt = require(script.IK.LookAt)
-Fluxa.IK.TwoBoneIK = require(script.IK.TwoBoneIK)
-
 return Fluxa
