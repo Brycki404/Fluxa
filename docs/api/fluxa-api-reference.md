@@ -76,7 +76,7 @@ for _, seq in ipairs(animFolder:GetChildren()) do
     end
 end
 
--- 2. Destroy Roblox's default Animator
+-- 2. Destroy Roblox's default Animator (you actually don't have to anymore since Fluxa 5.2.0, you just have to disable the default Animate script)
 local animator = humanoid:FindFirstChildOfClass("Animator")
 if animator then animator:Destroy() end
 
