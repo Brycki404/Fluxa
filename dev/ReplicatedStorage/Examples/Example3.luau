@@ -316,11 +316,6 @@ end
 local function disableBuiltInCharacterAnimation(character: Model)
 	local humanoid = character:FindFirstChildOfClass("Humanoid")
 	if humanoid then
-		local animator = humanoid:FindFirstChildOfClass("Animator")
-		if animator then
-			animator:Destroy()
-		end
-
 		humanoid.AutoRotate = false
 
 		--Disable humanoid states that aren't needed for this Character Controller
@@ -756,12 +751,7 @@ function module:Start(_clientScript: LocalScript)
 		disableBuiltInCharacterAnimation(character)
 	local humanoid = character:WaitForChild("Humanoid")
 	local root = character:WaitForChild("HumanoidRootPart")
-
-	local animator = humanoid:FindFirstChildOfClass("Animator")
-	if animator then
-		animator:Destroy()
-	end
-
+	
 	_controller = createFluxaController(character, assets, true)
 
 	setBaseBlend(_controller, "LastYaw", getYaw(root.CFrame))

@@ -65,6 +65,65 @@ function module:SetLocalReplicationEnabled(enabled: boolean)
 	FluxaReplicationService.SetLocalReplicationEnabled(_localControllerReplicationEnabled)
 end
 
+-- Utility: Create or get LookTarget attachment under Humanoid
+local function getOrCreateLookTarget(root)
+	local lookTarget = root:FindFirstChild("LookTarget")
+	if not lookTarget then
+		lookTarget = Instance.new("Attachment")
+		lookTarget.Name = "LookTarget"
+		lookTarget.Parent = root
+	end
+	return lookTarget
+end
+
+-- Utility: Create IKControl for LookAt
+local function createLookAtIKControl(character, humanoid, isPlayer)
+	local head = character:FindFirstChild("Head")
+	local upperTorso = character:FindFirstChild("UpperTorso")
+	local root = character:FindFirstChild("HumanoidRootPart") or character.PrimaryPart
+	if not (head and upperTorso and root) then return end
+
+	-- Remove existing LookAt IKControl if present
+	for _, child in ipairs(character:GetChildren()) do
+		if child:IsA("IKControl") and child.Name == "LookAtIK" then
+			child:Destroy()
+		end
+	end
+
+	local ik = Instance.new("IKControl")
+	ik.Name = "LookAtIK"
+	ik.Type = Enum.IKControlType.LookAt
+	ik.EndEffector = head
+	ik.ChainRoot = upperTorso
+	ik.Parent = humanoid
+
+	local lookTarget = getOrCreateLookTarget(root)
+	ik.Target = lookTarget
+
+	if isPlayer then
+		-- Update LookTarget position every frame for player
+		local camera = workspace.CurrentCamera
+		local connection
+		connection = RunService.RenderStepped:Connect(function()
+			if not (head and lookTarget and camera) then return end
+			local headCF = head.CFrame
+			local camLook = camera.CFrame.LookVector
+			local rel = (headCF.Position - camera.CFrame.Position).Unit
+			local dot = rel:Dot(camLook)
+			local forward = camLook
+			-- Flip if looking at front of character (dot < 0)
+			if dot < 0 then
+				forward = -camLook
+			end
+			lookTarget.WorldCFrame = CFrame.new(headCF.Position + forward.Unit * 8)
+		end)
+		-- Clean up connection if character/humanoid is destroyed
+		humanoid.Destroying:Connect(function()
+			if connection then connection:Disconnect() end
+		end)
+	end
+end
+
 local function getLayerBlend(controller, layerName, paramName, fallback)
 	local value = controller:GetLayerDriver(layerName, paramName, false)
 	if value ~= nil then
@@ -323,13 +382,8 @@ end
 local function disableBuiltInCharacterAnimation(character: Model)
 	local humanoid = character:FindFirstChildOfClass("Humanoid")
 	if humanoid then
-		local animator = humanoid:FindFirstChildOfClass("Animator")
-		if animator then
-			animator:Destroy()
-		end
-
-        humanoid.AutoRotate = false
-
+		-- Do NOT destroy Animator
+		humanoid.AutoRotate = false
 		humanoid:SetStateEnabled(Enum.HumanoidStateType.Ragdoll, false)
 		humanoid:SetStateEnabled(Enum.HumanoidStateType.FallingDown, false)
 		humanoid:SetStateEnabled(Enum.HumanoidStateType.GettingUp, false)
@@ -509,6 +563,9 @@ local function createFluxaController(character: Model, bindingSetManager, isLoca
 			end
 
 			return finalPose
+		end,
+		OnPostStep = function(_ctrl, _dt, _finalPose)
+			-- Runtime IK is layered into finalPose in OnPostBlend.
 		end,
 		Layers = {
 			Base = { Weight = 1, Order = 0 },
@@ -703,10 +760,7 @@ function module:Start(_clientScript: LocalScript)
 		local humanoid = character:WaitForChild("Humanoid")
 		local root = character:WaitForChild("HumanoidRootPart")
 
-		local animator = humanoid:FindFirstChildOfClass("Animator")
-		if animator then
-			animator:Destroy()
-		end
+		-- Do NOT destroy Animator
 
 		_controller = createFluxaController(character, bindingSetManager, true)
 		FluxaService.RegisterController(LocalPlayer, _controller)
@@ -723,6 +777,9 @@ function module:Start(_clientScript: LocalScript)
 		if _localControllerReplicationEnabled then
 			FluxaReplicationService.StartLocalReplication(_controller)
 		end
+
+		-- Add LookAt IKControl for player
+		createLookAtIKControl(character, humanoid, true)
 	end
 
 	for _, inst in ipairs(CollectionService:GetTagged(FLUXA_NPC_TAG)) do
