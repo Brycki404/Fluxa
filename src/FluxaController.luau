@@ -1241,7 +1241,6 @@ function FluxaController.Start(self: ControllerInstance)
 	-- Allows for existence of Roblox Animator and AnimationController on the same character, stepping after Roblox's built-in animation system to ensure our poses apply on top, but allows for IKControl instances to still run overtop of Fluxa!!! :D
 	-- Note! Worskpace.SignalBehavior needs to be Default and not Deferred for IKControls to work with Fluxa!
 	self._updateConnection = RunService.Stepped:Connect(function(_t, dt)
-		print(1/dt)
 		self:Step(dt)
 	end)
 end

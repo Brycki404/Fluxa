@@ -122,10 +122,6 @@ local function disableBuiltInCharacterAnimation(character: Model)
 	if humanoid then
 		
 		-- Do NOT destroy Animator
-		local animator = humanoid:FindFirstChildOfClass("Animator")
-		if animator then
-			animator:Destroy()
-		end
 		humanoid:SetStateEnabled(Enum.HumanoidStateType.Ragdoll, false)
 		humanoid:SetStateEnabled(Enum.HumanoidStateType.FallingDown, false)
 		humanoid:SetStateEnabled(Enum.HumanoidStateType.GettingUp, false)
@@ -139,68 +135,6 @@ local function disableBuiltInCharacterAnimation(character: Model)
 			descendant:Destroy()
 		end
 	end
-end
--- Utility: Create or get LookTarget attachment under Humanoid
-local function getOrCreateLookTarget(humanoid)
-	local lookTarget = humanoid:FindFirstChild("LookTarget")
-	if not lookTarget then
-		lookTarget = Instance.new("Attachment")
-		lookTarget.Name = "LookTarget"
-		lookTarget.Parent = humanoid
-	end
-	return lookTarget
-end
-
--- Utility: Create IKControl for LookAt
-local function createLookAtIKControl(character, humanoid)
-	local head = character:FindFirstChild("Head")
-	local upperTorso = character:FindFirstChild("UpperTorso")
-	local root = character:FindFirstChild("HumanoidRootPart") or character.PrimaryPart
-	if not (head and upperTorso and root) then return end
-
-	-- Remove existing LookAt IKControl if present
-	for _, child in ipairs(character:GetChildren()) do
-		if child:IsA("IKControl") and child.Name == "LookAtIK" then
-			child:Destroy()
-		end
-	end
-
-	local ik = Instance.new("IKControl")
-	ik.Name = "LookAtIK"
-	ik.Type = Enum.IKControlType.LookAt
-	ik.EndEffector = head
-	ik.ChainRoot = upperTorso
-	ik.Parent = humanoid
-
-	local lookTarget = getOrCreateLookTarget(root)
-	ik.Target = lookTarget
-end
-
--- Utility: For NPCs, update LookTarget to closest Humanoid in radius
-local function updateNPCLookTarget(npcCharacter, humanoid, radius)
-	local head = npcCharacter:FindFirstChild("Head")
-	local root = npcCharacter:FindFirstChild("HumanoidRootPart") or npcCharacter.PrimaryPart
-	if not head or not root then return end
-	local lookTarget = getOrCreateLookTarget(root)
-	local closest, closestDist = nil, radius
-	for _, other in ipairs(workspace:GetDescendants()) do
-		if other:IsA("Humanoid") and other ~= humanoid and other.Health > 0 then
-			local otherRoot = other.Parent and other.Parent:FindFirstChild("HumanoidRootPart")
-			if otherRoot then
-				local dist = (head.Position - otherRoot.Position).Magnitude
-				if dist < closestDist then
-					closest = otherRoot
-					closestDist = dist
-				end
-			end
-		end
-	end
-	-- if closest then
-	-- 	lookTarget.WorldCFrame = CFrame.new(closest.Position)
-	-- else
-	-- 	-- Default: look straight ahead
-	-- 	lookTarget.WorldCFrame = CFrame.new(head.Position + head.CFrame.LookVector.Unit * 8)
-	-- end
 end
 
 local function createServerController(character: Model, bindingSetManager)
@@ -532,6 +466,7 @@ local function cloneCharacterAsNPC(sourceCharacter: Model): Model?
 	return clone
 end
 
+
 local function createNPCForPlayer(player: Player, sourceCharacter: Model)
 	if npcRecords[player] ~= nil then
 		return
@@ -542,11 +477,13 @@ local function createNPCForPlayer(player: Player, sourceCharacter: Model)
 		return
 	end
 
-	local npcCharacter = cloneCharacterAsNPC(sourceCharacter)
-	if npcCharacter == nil then
+	-- Use premade ServerNPC from Workspace
+	local premade = Workspace:FindFirstChild("ServerNPC")
+	if not premade then
+		warn("Example5NPC: No premade ServerNPC found in Workspace!")
 		return
 	end
-
+	local npcCharacter = premade:Clone()
 	npcCharacter.Name = player.Name .. "_ServerNPC"
 	npcCharacter.Parent = Workspace
 	npcCharacter:PivotTo(sourceRoot.CFrame * CFrame.new(12, 0, 12))
@@ -561,8 +498,6 @@ local function createNPCForPlayer(player: Player, sourceCharacter: Model)
 
 	root:SetNetworkOwner(nil)
 
-	-- Add LookAt IKControl for NPC
-	createLookAtIKControl(npcCharacter, humanoid)
 	-- Update LookTarget every frame
 	local radius = 32
 	local runConn
@@ -637,12 +572,63 @@ local function onPlayer(player: Player)
 	end
 end
 
-for _, player in ipairs(Players:GetPlayers()) do
-	onPlayer(player)
-end
+-- for _, player in ipairs(Players:GetPlayers()) do
+-- 	onPlayer(player)
+-- end
 
-Players.PlayerAdded:Connect(onPlayer)
-Players.PlayerRemoving:Connect(function(player)
-	destroyNPCForPlayer(player)
-	spawnedPlayers[player] = nil
-end)
+-- Players.PlayerAdded:Connect(onPlayer)
+-- Players.PlayerRemoving:Connect(function(player)
+-- 	destroyNPCForPlayer(player)
+-- 	spawnedPlayers[player] = nil
+-- end)
+
+
+do
+	-- Use premade ServerNPC from Workspace
+	local npcCharacter = workspace:FindFirstChild("ServerNPC")
+	if not npcCharacter then
+		warn("Example5NPC: No premade ServerNPC found in Workspace!")
+		return
+	end
+
+	disableBuiltInCharacterAnimation(npcCharacter)
+
+	local humanoid = npcCharacter:FindFirstChildOfClass("Humanoid")
+	local root = npcCharacter:FindFirstChild("HumanoidRootPart")
+	if humanoid == nil or root == nil or not root:IsA("BasePart") then
+		npcCharacter:Destroy()
+		return
+	end
+
+	root:SetNetworkOwner(nil)
+
+	local animFolder = ReplicatedStorage:FindFirstChild("Example3Animations_R15") or ReplicatedStorage:FindFirstChild("Example2Animations_R15")
+	if animFolder == nil then
+		warn("Example5NPC: missing Example3Animations_R15 / Example2Animations_R15")
+		npcCharacter:Destroy()
+		return
+	end
+
+	local bindingSetManager = createBindingSetManager(animFolder)
+	local controller = createServerController(npcCharacter, bindingSetManager)
+	local npcId = game:GetService("HttpService"):GenerateGUID(false)
+	local record = {
+		Id = npcId,
+		Model = npcCharacter,
+		Humanoid = humanoid,
+		Root = root,
+		Controller = controller,
+		Origin = root.Position,
+		MovementConnection = attachMovementDriver(controller, humanoid, root),
+		StateConnection = attachHumanoidStateDriver(controller, humanoid),
+	}
+
+	npcCharacter:SetAttribute(FLUXA_NPC_ID_ATTRIBUTE, npcId)
+	CollectionService:AddTag(npcCharacter, FLUXA_NPC_TAG)
+
+	FluxaService.StartNPCReplication(npcId, controller, {
+		Character = npcCharacter,
+		RelevanceRadius = NPC_RELEVANCE_RADIUS,
+	})
+	startRandomWalkLoop(record)
+end
