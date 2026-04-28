@@ -71,13 +71,13 @@ local function followServerNPC()
 			if other:IsA("Humanoid") and other ~= clientHumanoid and other.Health > 0 then
 				local otherRoot = other.Parent and other.Parent:FindFirstChild("HumanoidRootPart")
 				if otherRoot and otherRoot ~= serverRoot then
-					local dist = (head.Position - otherRoot.Position).Magnitude
+					local dist = (serverRoot.Position - otherRoot.Position).Magnitude
 					-- Angle check: only consider targets in front of the NPC (e.g., within 90 degrees)
-					local toOther = (otherRoot.Position - head.Position).Unit
-					local forward = head.CFrame.LookVector.Unit
+					local toOther = (otherRoot.Position - serverRoot.Position).Unit
+					local forward = serverRoot.CFrame.LookVector.Unit
 					local dot = forward:Dot(toOther)
 					local angle = math.acos(math.clamp(dot, -1, 1))
-					local maxAngle = math.rad(90) -- 90 degrees in front
+					local maxAngle = math.rad(45) -- 45 degrees in front
 					if dist < closestDist and angle <= maxAngle then
 						closest = otherRoot
 						closestDist = dist
@@ -85,20 +85,20 @@ local function followServerNPC()
 				end
 			end
 		end
-        local ikControl = clientHumanoid:FindFirstChildOfClass("IKControl")
-        if ikControl then
-            if closest then
-                local att = closest:FindFirstChild("RootAttachment") or closest:FindFirstChild("RootRigAttachment")
-                if att then
-                    ikControl.Target = att
-                    ikControl.Enabled = true
-                else
-                    ikControl.Enabled = false
-                end
-            else
-                ikControl.Enabled = false
-            end
-        end
+		local ikControl = clientHumanoid:FindFirstChildOfClass("IKControl")
+		if ikControl then
+            ikControl.Enabled = true
+			local targetWeight = 0
+			if closest then
+				local att = closest:FindFirstChild("RootAttachment") or closest:FindFirstChild("RootRigAttachment")
+				if att then
+					ikControl.Target = att
+					targetWeight = 1
+				end
+			end
+			-- Lerp current weight toward targetWeight
+			ikControl.Weight = ikControl.Weight and (ikControl.Weight + (targetWeight - ikControl.Weight) * 0.2) or targetWeight
+		end
 	end)
 end
 

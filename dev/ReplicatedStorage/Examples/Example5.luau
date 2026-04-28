@@ -104,18 +104,38 @@ local function createLookAtIKControl(character, humanoid, isPlayer)
 		-- Update LookTarget position every frame for player
 		local camera = workspace.CurrentCamera
 		local connection
-		connection = RunService.RenderStepped:Connect(function()
+		-- Store the last look target position for lerping
+		local lastLookPos = nil
+		connection = RunService.RenderStepped:Connect(function(dt)
 			if not (head and lookTarget and camera) then return end
 			local headCF = head.CFrame
+			local charForward = headCF.LookVector
 			local camLook = camera.CFrame.LookVector
-			local rel = (headCF.Position - camera.CFrame.Position).Unit
-			local dot = rel:Dot(camLook)
-			local forward = camLook
-			-- Flip if looking at front of character (dot < 0)
+			-- Flip camera direction if camera is looking opposite character
+			local dot = charForward:Dot(camLook)
+			local cameraDir = camLook
 			if dot < 0 then
-				forward = -camLook
+				cameraDir = -camLook
 			end
-			lookTarget.WorldCFrame = CFrame.new(headCF.Position + forward.Unit * 8)
+			local targetPos = headCF.Position + cameraDir.Unit * 8
+			-- Lerp LookTarget position for smoothness
+			if lastLookPos == nil then
+				lastLookPos = lookTarget.WorldPosition
+			end
+			lastLookPos = lastLookPos:Lerp(targetPos, math.clamp(dt * 10, 0, 1))
+			lookTarget.WorldCFrame = CFrame.new(lastLookPos)
+
+			-- Lerp IKControl.Weight based on how perpendicular camera is to root's look direction
+			local ik = humanoid:FindFirstChildWhichIsA("IKControl")
+			if ik then
+				-- 1 when looking forward/back, 0 when perpendicular
+				local rootForward = (root.CFrame.LookVector)
+				local camDir = camera.CFrame.LookVector
+				local align = math.abs(rootForward:Dot(camDir)) -- 1 = aligned/opposite, 0 = perpendicular
+				-- Exponential/quadratic falloff for sharper edge dropoff
+				local targetWeight = align ^ 2
+				ik.Weight = ik.Weight and (ik.Weight + (targetWeight - ik.Weight) * math.clamp(dt * 10, 0, 1)) or targetWeight
+			end
 		end)
 		-- Clean up connection if character/humanoid is destroyed
 		humanoid.Destroying:Connect(function()
