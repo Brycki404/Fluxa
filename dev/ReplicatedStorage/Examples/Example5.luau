@@ -99,49 +99,7 @@ local function createLookAtIKControl(character, humanoid, isPlayer)
 
 	local lookTarget = getOrCreateLookTarget(root)
 	ik.Target = lookTarget
-
-	if isPlayer then
-		-- Update LookTarget position every frame for player
-		local camera = workspace.CurrentCamera
-		local connection
-		-- Store the last look target position for lerping
-		local lastLookPos = nil
-		connection = RunService.RenderStepped:Connect(function(dt)
-			if not (head and lookTarget and camera) then return end
-			local headCF = head.CFrame
-			local charForward = headCF.LookVector
-			local camLook = camera.CFrame.LookVector
-			-- Flip camera direction if camera is looking opposite character
-			local dot = charForward:Dot(camLook)
-			local cameraDir = camLook
-			if dot < 0 then
-				cameraDir = -camLook
-			end
-			local targetPos = headCF.Position + cameraDir.Unit * 8
-			-- Lerp LookTarget position for smoothness
-			if lastLookPos == nil then
-				lastLookPos = lookTarget.WorldPosition
-			end
-			lastLookPos = lastLookPos:Lerp(targetPos, math.clamp(dt * 10, 0, 1))
-			lookTarget.WorldCFrame = CFrame.new(lastLookPos)
-
-			-- Lerp IKControl.Weight based on how perpendicular camera is to root's look direction
-			local ik = humanoid:FindFirstChildWhichIsA("IKControl")
-			if ik then
-				-- 1 when looking forward/back, 0 when perpendicular
-				local rootForward = (root.CFrame.LookVector)
-				local camDir = camera.CFrame.LookVector
-				local align = math.abs(rootForward:Dot(camDir)) -- 1 = aligned/opposite, 0 = perpendicular
-				-- Exponential/quadratic falloff for sharper edge dropoff
-				local targetWeight = align ^ 2
-				ik.Weight = ik.Weight and (ik.Weight + (targetWeight - ik.Weight) * math.clamp(dt * 10, 0, 1)) or targetWeight
-			end
-		end)
-		-- Clean up connection if character/humanoid is destroyed
-		humanoid.Destroying:Connect(function()
-			if connection then connection:Disconnect() end
-		end)
-	end
+	ik.Enabled = false
 end
 
 local function getLayerBlend(controller, layerName, paramName, fallback)
@@ -419,6 +377,9 @@ local function disableBuiltInCharacterAnimation(character: Model)
 end
 
 local function createFluxaController(character: Model, bindingSetManager, isLocalController: boolean)
+		-- Persistent variable for smoothing camera look direction
+		local smoothedLookDir = nil
+		local LOOK_LERP_SPEED = 12 -- higher = snappier, lower = smoother
 	local upperBodyMask = {
 		"UpperTorso",
 		"Torso",
@@ -537,7 +498,7 @@ local function createFluxaController(character: Model, bindingSetManager, isLoca
 
 			innerController:SetLayerWeight("UpperBody", attackPoseInfluence)
 		end,
-		OnPostBlend = function(innerController, finalPose, _dt)
+		OnPostBlend = function(innerController, finalPose, dt)
 			local currentBaseState = getBaseState(innerController)
 			local turnLean = getLayerBlend(innerController, "Base", "TurnLean", 0)
 			if currentBaseState ~= "Jump" and currentBaseState ~= "Fall" and math.abs(turnLean) > 1e-4 then
@@ -554,24 +515,29 @@ local function createFluxaController(character: Model, bindingSetManager, isLoca
 				end
 			end
 
-			if attackPoseInfluence > 0 then
+			-- Complementary weighting: AimPitch vs LookAt
+			local aimPitchWeight = attackPoseInfluence
+			local lookAtWeight = 1 - aimPitchWeight
+
+			-- AimPitch effect (as before, but weighted)
+			if aimPitchWeight > 0 then
 				if finalPose.RightLowerArm then
-					finalPose.RightLowerArm = finalPose.RightLowerArm:Lerp(CFrame.identity, attackPoseInfluence)
+					finalPose.RightLowerArm = finalPose.RightLowerArm:Lerp(CFrame.identity, aimPitchWeight)
 				end
 				if finalPose.RightHand then
-					finalPose.RightHand = finalPose.RightHand:Lerp(CFrame.identity, attackPoseInfluence)
+					finalPose.RightHand = finalPose.RightHand:Lerp(CFrame.identity, aimPitchWeight)
 				end
 
 				local aimPitch = getLayerBlend(innerController, "UpperBody", "AimPitch", smoothedAimPitch)
 				local desiredPitch = math.clamp(math.rad(MAX_DELTA_AIM_PITCH_DEG) * aimPitch, math.rad(MIN_AIM_PITCH_DEG), math.rad(MAX_AIM_PITCH_DEG))
-				local pitchRadians = desiredPitch * attackPoseInfluence
+				local pitchRadians = desiredPitch * aimPitchWeight
 				local pitchOffset = CFrame.Angles(pitchRadians, 0, 0)
 
 				if finalPose.UpperTorso then
 					if finalPose.LowerTorso then
 						local upperBase = finalPose.UpperTorso
 						local compensatedUpper = finalPose.LowerTorso.Rotation:Inverse() * upperBase
-						local compensationAlpha = math.clamp(attackPoseInfluence * attackPoseInfluence, 0, 1)
+						local compensationAlpha = math.clamp(aimPitchWeight * aimPitchWeight, 0, 1)
 						local blendedUpper = upperBase:Lerp(compensatedUpper, compensationAlpha)
 						finalPose.UpperTorso = blendedUpper * pitchOffset
 					else
@@ -579,6 +545,92 @@ local function createFluxaController(character: Model, bindingSetManager, isLoca
 					end
 				elseif finalPose.Torso then
 					finalPose.Torso = finalPose.Torso * pitchOffset
+				end
+			end
+
+			-- LookAt effect (complementary to AimPitch, replicated via GlobalDriver)
+			local isLocalPlayerCharacter = false
+			if Players and Players.LocalPlayer and innerController and innerController.Character then
+				isLocalPlayerCharacter = (Players.LocalPlayer.Character == innerController.Character)
+			end
+
+			-- We'll store the lookAt axis and angle as a Vector4 (x, y, z, angle)
+			local lookAtAxisAngle = innerController:GetGlobalDriver("LookAtAxisAngle")
+
+			-- Get the rest pose (original, unmodified pose) for Head and UpperTorso
+			local restPose = innerController.RestPose or {}
+
+			if lookAtWeight > 0 then
+				-- Smoothing state (persist across calls)
+				innerController._smoothedLookCamPitch = innerController._smoothedLookCamPitch or 0
+				innerController._smoothedLookCamYawRel = innerController._smoothedLookCamYawRel or 0
+				local SMOOTH_SPEED = 14 -- higher = snappier, lower = smoother
+				local function smoothAngle(current, target, dt)
+					-- Handles wraparound for angles
+					local delta = target - current
+					if delta > math.pi then delta = delta - 2 * math.pi end
+					if delta < -math.pi then delta = delta + 2 * math.pi end
+					return current + (delta * math.clamp(dt * SMOOTH_SPEED, 0, 1))
+				end
+				if isLocalPlayerCharacter then
+					local camera = Workspace.CurrentCamera
+					local character = innerController.Character
+					if camera and character then
+						local camCFrame = camera.CFrame
+						local camLook = camCFrame.LookVector
+						local rootPart = character:FindFirstChild("HumanoidRootPart")
+						local camYawRel = 0
+						if rootPart then
+							local charLook = rootPart.CFrame.LookVector
+							-- Flip camera direction only if opposite
+							if charLook:Dot(camLook) < 0 then
+								camLook = -camLook
+								camCFrame = CFrame.new(camCFrame.Position, camCFrame.Position + camLook)
+							end
+							-- Compute yaw relative to rootPart.CFrame
+							local rootYaw = math.atan2(-charLook.X, -charLook.Z)
+							local camYaw = math.atan2(-camLook.X, -camLook.Z)
+							camYawRel = camYaw - rootYaw
+							-- Normalize to [-pi, pi]
+							if camYawRel > math.pi then camYawRel = camYawRel - 2 * math.pi end
+							if camYawRel < -math.pi then camYawRel = camYawRel + 2 * math.pi end
+						end
+						local camPitch = math.asin(camCFrame.LookVector.Y)
+						-- Smooth the pitch and yaw
+						innerController._smoothedLookCamPitch = innerController._smoothedLookCamPitch or camPitch
+						innerController._smoothedLookCamYawRel = innerController._smoothedLookCamYawRel or camYawRel
+						innerController._smoothedLookCamPitch = innerController._smoothedLookCamPitch + (camPitch - innerController._smoothedLookCamPitch) * math.clamp(dt * SMOOTH_SPEED, 0, 1)
+						innerController._smoothedLookCamYawRel = smoothAngle(innerController._smoothedLookCamYawRel, camYawRel, dt)
+						-- Set global drivers for replication
+						innerController:SetGlobalDriver("LookCamPitch", innerController._smoothedLookCamPitch)
+						innerController:SetGlobalDriver("LookCamYawRel", innerController._smoothedLookCamYawRel)
+						-- Blend the angles for UpperTorso and Head
+						if finalPose.UpperTorso and (restPose.UpperTorso or finalPose.UpperTorso) then
+							local base = restPose.UpperTorso or finalPose.UpperTorso
+							finalPose.UpperTorso = base * CFrame.Angles(innerController._smoothedLookCamPitch * 0.15 * lookAtWeight, innerController._smoothedLookCamYawRel * 0.15 * lookAtWeight, 0)
+						end
+						if finalPose.Head and (restPose.Head or finalPose.Head) then
+							local base = restPose.Head or finalPose.Head
+							finalPose.Head = base * CFrame.Angles(innerController._smoothedLookCamPitch * 0.85 * lookAtWeight, innerController._smoothedLookCamYawRel * 0.85 * lookAtWeight, 0)
+						end
+					end
+				else
+					-- For remote players, get camPitch and camYawRel from global drivers and smooth
+					local camPitch = innerController:GetGlobalDriver("LookCamPitch") or 0
+					local camYawRel = innerController:GetGlobalDriver("LookCamYawRel") or 0
+					innerController._smoothedLookCamPitch = innerController._smoothedLookCamPitch or camPitch
+					innerController._smoothedLookCamYawRel = innerController._smoothedLookCamYawRel or camYawRel
+					innerController._smoothedLookCamPitch = innerController._smoothedLookCamPitch + (camPitch - innerController._smoothedLookCamPitch) * math.clamp(dt * SMOOTH_SPEED, 0, 1)
+					innerController._smoothedLookCamYawRel = smoothAngle(innerController._smoothedLookCamYawRel, camYawRel, dt)
+					-- Blend the angles for UpperTorso and Head
+					if finalPose.UpperTorso and (restPose.UpperTorso or finalPose.UpperTorso) then
+						local base = restPose.UpperTorso or finalPose.UpperTorso
+						finalPose.UpperTorso = base * CFrame.Angles(innerController._smoothedLookCamPitch * 0.15 * lookAtWeight, innerController._smoothedLookCamYawRel * 0.15 * lookAtWeight, 0)
+					end
+					if finalPose.Head and (restPose.Head or finalPose.Head) then
+						local base = restPose.Head or finalPose.Head
+						finalPose.Head = base * CFrame.Angles(innerController._smoothedLookCamPitch * 0.85 * lookAtWeight, innerController._smoothedLookCamYawRel * 0.85 * lookAtWeight, 0)
+					end
 				end
 			end
 
