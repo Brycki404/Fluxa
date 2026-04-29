@@ -5,6 +5,7 @@ local AnimationAsset = {}
 
 local FluxaTypes = require(script.Parent.FluxaTypes)
 
+-- Type Imports
 type AnimationKeyframe = FluxaTypes.AnimationKeyframe
 type AnimationChannel = FluxaTypes.AnimationChannel
 type AnimationEvent = FluxaTypes.AnimationEvent

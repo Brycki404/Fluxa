@@ -25,7 +25,7 @@ type TrackConfig = FluxaTypes.TrackConfig
 type TrackSwapOptions = FluxaTypes.TrackSwapOptions
 type PoseData = FluxaTypes.PoseData
 type NumberMap = FluxaTypes.NumberMap
-type NewOptions = FluxaTypes.NewOptions
+type NewControllerOptions = FluxaTypes.NewControllerOptions
 type ReplicationMode = FluxaTypes.ReplicationMode
 type LayerConfig = FluxaTypes.LayerConfig
 type ReplicationPacketOptions = FluxaTypes.ReplicationPacketOptions
@@ -356,7 +356,7 @@ local function resolveTrackWeights(controller: ControllerInstance, dt: number): 
 	return resolved
 end
 
-function FluxaController.new(options: NewOptions): ControllerInstance
+function FluxaController.new(options: NewControllerOptions): ControllerInstance
 	assert(options.Character, "FluxaController.new requires Character")
 
 	local self = setmetatable({}, FluxaController) :: any

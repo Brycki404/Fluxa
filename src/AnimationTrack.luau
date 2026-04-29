@@ -5,6 +5,7 @@ local AnimationTrack = {}
 local Signal = require(script.Parent.Signal)
 local FluxaTypes = require(script.Parent.FluxaTypes)
 
+-- Type Imports
 type AnimationTrackInstance = FluxaTypes.AnimationTrackInstance
 type AnimationTrackOptions = FluxaTypes.AnimationTrackOptions
 type SignalType = FluxaTypes.SignalType

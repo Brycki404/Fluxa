@@ -2,6 +2,8 @@
 -- FluxaBindingCatalog: shared binding definitions and set composition helpers.
 
 local FluxaTypes = require(script.Parent.FluxaTypes)
+
+-- Type Imports
 type BindingSources = FluxaTypes.BindingSources
 type BindingFallbacks = FluxaTypes.BindingFallbacks
 type TrackBindings = FluxaTypes.TrackBindings

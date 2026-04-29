@@ -75,7 +75,7 @@ export type TrackSwapOptions = {
 	BindingId: string?,
 	TrackOptions: {[string]: any}?,
 }
-export type NewOptions = {
+export type NewControllerOptions = {
 	Character: Model,
 	AutoApplyPose: boolean?,
 	AutoStart: boolean?,
@@ -387,8 +387,52 @@ export type BindingCatalogInstance = {
 	HasBinding: (self: BindingCatalogInstance, bindingId: string) -> boolean,
 }
 
+-- Fluxa Binding Set Manager
+export type BindingCatalogLike = {
+	GetSource: (self: any, bindingId: string) -> any,
+	GetFallbackBinding: (self: any, bindingId: string) -> string?,
+	ResolveFallbackChain: (self: any, bindingId: string) -> {string}?,
+	GetInitialTrackBindings: (self: any) -> {[string]: string},
+	GetSetBindings: (self: any, setName: string, includeInitialBindings: boolean?) -> {[string]: string}?,
+	ResolveBindings: (self: any, layerNames: {string}?, includeInitialBindings: boolean?) -> {[string]: string},
+}
+export type TrackConfigMap = {[string]: {[string]: any}}
+export type ActiveBindingLayer = {
+	Name: string,
+	Bindings: {[string]: string},
+}
+export type BindingSetManagerNewOptions = {
+	Catalog: BindingCatalogLike,
+	AssetManager: any?,
+	SourceContainer: Instance?,
+	SourceLookup: {[string]: any}?,
+}
+export type BindingSetManagerInstance = {
+	Catalog: BindingCatalogLike,
+	AssetManager: any,
+
+	RegisterSource: (self: BindingSetManagerInstance, name: string, source: any) -> (),
+	RegisterSourcesFromContainer: (self: BindingSetManagerInstance, container: Instance) -> (),
+	GetOrLoad: (self: BindingSetManagerInstance, bindingId: string) -> (any?, string?),
+	AttachController: (self: BindingSetManagerInstance, controller: any) -> (),
+	LoadTrack: (self: BindingSetManagerInstance, controller: any, trackName: string, trackConfig: {[string]: any}) -> any?,
+	LoadTracks: (self: BindingSetManagerInstance, controller: any, trackConfigs: TrackConfigMap) -> {[string]: any},
+	ApplySet: (self: BindingSetManagerInstance, controller: any, setName: string, trackConfigs: TrackConfigMap?) -> {[string]: any},
+	SetBindingLayer: (self: BindingSetManagerInstance, layerName: string, bindings: {[string]: string}, controller: any?, trackConfigs: TrackConfigMap?) -> {[string]: any}?,
+	SetCatalogLayer: (self: BindingSetManagerInstance, layerName: string, catalogLayerName: string, controller: any?, trackConfigs: TrackConfigMap?) -> {[string]: any}?,
+	RemoveBindingLayer: (self: BindingSetManagerInstance, layerName: string, controller: any?, trackConfigs: TrackConfigMap?) -> {[string]: any}?,
+	GetResolvedBindings: (self: BindingSetManagerInstance) -> {[string]: string},
+	ApplyActiveLayers: (self: BindingSetManagerInstance, controller: any, trackConfigs: TrackConfigMap?) -> {[string]: any},
+
+	_sourceLookup: {[string]: any},
+	_bindingLayers: {[string]: ActiveBindingLayer},
+	_bindingLayerOrder: {string},
+}
+
+
 local module = {}
 
+-- Enums
 module.ReplicationMode = {
 	LocalOnly = "LocalOnly",
 	ClientOwned = "ClientOwned",

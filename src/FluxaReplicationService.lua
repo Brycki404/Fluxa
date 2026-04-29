@@ -8,6 +8,9 @@ local RunService = game:GetService("RunService")
 local FluxaTypes = require(script.Parent.FluxaTypes)
 local FluxaSettings = require(script.Parent.FluxaSettings)
 
+-- Type Imports
+type ReplicationMode = FluxaTypes.ReplicationMode
+
 local ReplicationService = {}
 
 local _remoteEvent = nil
@@ -136,7 +139,7 @@ local function ensureServerReceiver()
 	end)
 end
 
-function ReplicationService.StartLocalReplication(controller, replicationMode)
+function ReplicationService.StartLocalReplication(controller, replicationMode: ReplicationMode?)
 	if controller == nil then
 		return
 	end

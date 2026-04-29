@@ -9,6 +9,7 @@ local FluxaTypes = require(script.Parent.FluxaTypes)
 local FluxaAssetManager = {}
 FluxaAssetManager.__index = FluxaAssetManager
 
+-- Type Imports
 type AnimationAssetInstance = FluxaTypes.AnimationAssetInstance
 type AnimationAssetSource = FluxaTypes.AnimationAssetSource
 type LoadOptions = FluxaTypes.LoadOptions
