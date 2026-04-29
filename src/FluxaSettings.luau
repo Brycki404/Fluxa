@@ -35,7 +35,7 @@ function FluxaSettings.Get(index: string, defaultValue: any): any
     return FluxaSettings.Settings[index] or defaultValue
 end
 
-function FluxaSettings.Set(index: string, value: any): any
+function FluxaSettings.Set(index: string, value: any): ()
     FluxaSettings.Settings[index] = value
 end
 
