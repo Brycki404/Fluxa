@@ -21,8 +21,8 @@ local FluxaReplicationService = Fluxa.FluxaReplicationService
 local FluxaService = Fluxa.FluxaService
 local Example5BindingCatalog = require(script.Parent.Example5BindingCatalog)
 
-local SLOW_WALK_SPEED = 3
-local BASE_WALK_SPEED = 3
+local SLOW_WALK_SPEED = 2.9
+local BASE_WALK_SPEED = 2.9
 local MAX_RUN_SPEED = 24
 local MOMENTUM_BUILD_RATE = 0.8
 local MOMENTUM_DECAY_RATE = 0.4
@@ -433,6 +433,7 @@ local function createFluxaController(character: Model, bindingSetManager, isLoca
 
 			local locomotionCycleRate = 0
 			if moving then
+				print("desired rate:", smoothedPlanarSpeed / BASE_WALK_SPEED)
 				locomotionCycleRate = math.clamp(smoothedPlanarSpeed / BASE_WALK_SPEED, LOCOMOTION_MIN_CYCLE_RATE, LOCOMOTION_MAX_CYCLE_RATE)
 			end
 
@@ -554,9 +555,6 @@ local function createFluxaController(character: Model, bindingSetManager, isLoca
 				isLocalPlayerCharacter = (Players.LocalPlayer.Character == innerController.Character)
 			end
 
-			-- We'll store the lookAt axis and angle as a Vector4 (x, y, z, angle)
-			local lookAtAxisAngle = innerController:GetGlobalDriver("LookAtAxisAngle")
-
 			-- Get the rest pose (original, unmodified pose) for Head and UpperTorso
 			local restPose = innerController.RestPose or {}
 
@@ -572,46 +570,67 @@ local function createFluxaController(character: Model, bindingSetManager, isLoca
 					if delta < -math.pi then delta = delta + 2 * math.pi end
 					return current + (delta * math.clamp(dt * SMOOTH_SPEED, 0, 1))
 				end
+				-- Exponential curve for yaw influence
+				local function yawInfluenceCurve(yaw)
+					-- Influence is 1 in the central region, drops to 0 in the last 40 degrees near perpendicular
+					local maxInfluenceAngle = math.rad(90)
+					local cutoff = math.rad(50) -- start reducing at 50deg
+					local absYaw = math.abs(yaw)
+					if absYaw >= maxInfluenceAngle then
+						return 0
+					elseif absYaw <= cutoff then
+						return 1
+					else
+						-- Smoothly drop from 1 to 0 between 50 and 90 degrees
+						local t = (absYaw - cutoff) / (maxInfluenceAngle - cutoff)
+						-- Use a smoothstep for a gentle curve
+						return 1 - (3*t^2 - 2*t^3)
+					end
+				end
 				if isLocalPlayerCharacter then
 					local camera = Workspace.CurrentCamera
 					local character = innerController.Character
 					if camera and character then
 						local camCFrame = camera.CFrame
-						local camLook = camCFrame.LookVector
 						local rootPart = character:FindFirstChild("HumanoidRootPart")
 						local camYawRel = 0
+						local camPitch = 0
 						if rootPart then
 							local charLook = rootPart.CFrame.LookVector
-							-- Flip camera direction only if opposite
-							if charLook:Dot(camLook) < 0 then
-								camLook = -camLook
-								camCFrame = CFrame.new(camCFrame.Position, camCFrame.Position + camLook)
+							-- Get camera look in rootPart's object space
+							local camLookLocal = rootPart.CFrame:VectorToObjectSpace(camCFrame.LookVector)
+							-- If facing opposite, flip only the Z axis
+							if charLook:Dot(camCFrame.LookVector) < 0 then
+								camLookLocal = Vector3.new(camLookLocal.X, camLookLocal.Y, -camLookLocal.Z)
 							end
-							-- Compute yaw relative to rootPart.CFrame
-							local rootYaw = math.atan2(-charLook.X, -charLook.Z)
-							local camYaw = math.atan2(-camLook.X, -camLook.Z)
-							camYawRel = camYaw - rootYaw
+							-- Compute yaw and pitch from local camera look
+							camYawRel = math.atan2(-camLookLocal.X, -camLookLocal.Z)
+							camPitch = math.asin(camLookLocal.Y)
 							-- Normalize to [-pi, pi]
 							if camYawRel > math.pi then camYawRel = camYawRel - 2 * math.pi end
 							if camYawRel < -math.pi then camYawRel = camYawRel + 2 * math.pi end
 						end
-						local camPitch = math.asin(camCFrame.LookVector.Y)
 						-- Smooth the pitch and yaw
 						innerController._smoothedLookCamPitch = innerController._smoothedLookCamPitch or camPitch
 						innerController._smoothedLookCamYawRel = innerController._smoothedLookCamYawRel or camYawRel
 						innerController._smoothedLookCamPitch = innerController._smoothedLookCamPitch + (camPitch - innerController._smoothedLookCamPitch) * math.clamp(dt * SMOOTH_SPEED, 0, 1)
-						innerController._smoothedLookCamYawRel = smoothAngle(innerController._smoothedLookCamYawRel, camYawRel, dt)
+						local yawInfluence = 1 --yawInfluenceCurve(camYawRel)
+						-- if yawInfluence == 0 then
+						-- 	innerController._smoothedLookCamYawRel = 0
+						-- else
+							innerController._smoothedLookCamYawRel = smoothAngle(innerController._smoothedLookCamYawRel, camYawRel, dt)
+						-- end
 						-- Set global drivers for replication
 						innerController:SetGlobalDriver("LookCamPitch", innerController._smoothedLookCamPitch)
 						innerController:SetGlobalDriver("LookCamYawRel", innerController._smoothedLookCamYawRel)
 						-- Blend the angles for UpperTorso and Head
 						if finalPose.UpperTorso and (restPose.UpperTorso or finalPose.UpperTorso) then
 							local base = restPose.UpperTorso or finalPose.UpperTorso
-							finalPose.UpperTorso = base * CFrame.Angles(innerController._smoothedLookCamPitch * 0.15 * lookAtWeight, innerController._smoothedLookCamYawRel * 0.15 * lookAtWeight, 0)
+							finalPose.UpperTorso = base * CFrame.Angles(innerController._smoothedLookCamPitch * 0.15 * lookAtWeight * yawInfluence, innerController._smoothedLookCamYawRel * 0.15 * lookAtWeight * yawInfluence, 0)
 						end
 						if finalPose.Head and (restPose.Head or finalPose.Head) then
 							local base = restPose.Head or finalPose.Head
-							finalPose.Head = base * CFrame.Angles(innerController._smoothedLookCamPitch * 0.85 * lookAtWeight, innerController._smoothedLookCamYawRel * 0.85 * lookAtWeight, 0)
+							finalPose.Head = base * CFrame.Angles(innerController._smoothedLookCamPitch * 0.85 * lookAtWeight * yawInfluence, innerController._smoothedLookCamYawRel * 0.85 * lookAtWeight * yawInfluence, 0)
 						end
 					end
 				else
@@ -622,14 +641,15 @@ local function createFluxaController(character: Model, bindingSetManager, isLoca
 					innerController._smoothedLookCamYawRel = innerController._smoothedLookCamYawRel or camYawRel
 					innerController._smoothedLookCamPitch = innerController._smoothedLookCamPitch + (camPitch - innerController._smoothedLookCamPitch) * math.clamp(dt * SMOOTH_SPEED, 0, 1)
 					innerController._smoothedLookCamYawRel = smoothAngle(innerController._smoothedLookCamYawRel, camYawRel, dt)
+					local yawInfluence = yawInfluenceCurve(innerController._smoothedLookCamYawRel)
 					-- Blend the angles for UpperTorso and Head
 					if finalPose.UpperTorso and (restPose.UpperTorso or finalPose.UpperTorso) then
 						local base = restPose.UpperTorso or finalPose.UpperTorso
-						finalPose.UpperTorso = base * CFrame.Angles(innerController._smoothedLookCamPitch * 0.15 * lookAtWeight, innerController._smoothedLookCamYawRel * 0.15 * lookAtWeight, 0)
+						finalPose.UpperTorso = base * CFrame.Angles(innerController._smoothedLookCamPitch * 0.15 * lookAtWeight * yawInfluence, innerController._smoothedLookCamYawRel * 0.15 * lookAtWeight * yawInfluence, 0)
 					end
 					if finalPose.Head and (restPose.Head or finalPose.Head) then
 						local base = restPose.Head or finalPose.Head
-						finalPose.Head = base * CFrame.Angles(innerController._smoothedLookCamPitch * 0.85 * lookAtWeight, innerController._smoothedLookCamYawRel * 0.85 * lookAtWeight, 0)
+						finalPose.Head = base * CFrame.Angles(innerController._smoothedLookCamPitch * 0.85 * lookAtWeight * yawInfluence, innerController._smoothedLookCamYawRel * 0.85 * lookAtWeight * yawInfluence, 0)
 					end
 				end
 			end
