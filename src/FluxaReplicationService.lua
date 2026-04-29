@@ -151,9 +151,22 @@ function ReplicationService.StartLocalReplication(controller, replicationMode: R
 	local mode = replicationMode or (controller.GetReplicationMode and controller:GetReplicationMode()) or controller._replicationMode or FluxaTypes.ReplicationMode.ServerOwned
 	controller._replicationMode = mode
 
+	-- ReplicationMode logic
 	if mode == FluxaTypes.ReplicationMode.LocalOnly then
 		-- No replication, just run locally
 		return
+	elseif mode == FluxaTypes.ReplicationMode.ServerOwned then
+		-- If on client, do not replicate to server
+		if RunService:IsClient() then
+			return
+		end
+		-- If on server, continue to replicate to clients
+	elseif mode == FluxaTypes.ReplicationMode.ClientOwned then
+		-- Only the owning client should replicate to the server
+		-- (On server, do not send updates; on client, allow replication)
+		if RunService:IsServer() then
+			return
+		end
 	end
 
 	if _sendConnection then
@@ -253,15 +266,26 @@ function ReplicationService.SendLocalPacket()
 		return
 	end
 
-	local remoteEvent = tryGetRemoteEvent()
-	if remoteEvent == nil then
+	-- Respect ReplicationMode
+	local mode = (_localController and (_localController.GetReplicationMode and _localController:GetReplicationMode()))
+		or (_localController and _localController._replicationMode)
+		or FluxaTypes.ReplicationMode.ServerOwned
+
+	-- In ServerOwned mode, never send local packets (neither client nor server)
+	if mode == FluxaTypes.ReplicationMode.ServerOwned or mode == FluxaTypes.ReplicationMode.LocalOnly then
 		return
 	end
 
-	-- Manual flushes always include the full state so callers can use this as
-	-- a "force-sync" on character spawn / teleport / binding change.
-	local packet = buildLocalPacket(true, true)
-	if packet then
+	-- Only allow sending in ClientOwned mode, and only from the client
+	if mode == FluxaTypes.ReplicationMode.ClientOwned and RunService:IsClient() then
+		local remoteEvent = tryGetRemoteEvent()
+		if remoteEvent == nil then
+			return
+		end
+		local packet = buildLocalPacket(true, true)
+		if not packet then
+			return
+		end
 		remoteEvent:FireServer(packet)
 		if _localController ~= nil and _localController.MarkTrackBindingsSent ~= nil then
 			_localController:MarkTrackBindingsSent()
