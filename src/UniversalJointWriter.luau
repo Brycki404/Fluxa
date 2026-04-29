@@ -182,9 +182,9 @@ function UniversalJointWriter.BuildJointMap(root: Model): (JointMap, RetargetMap
 		classCounts[cn] = (classCounts[cn] or 0) + 1
 	end
 	-- print("BuildJointMap: root =", root.Name, "| total descendants =", #descendants)
-	for cn, count in pairs(classCounts) do
+	-- for cn, count in pairs(classCounts) do
 		-- print(string.format("  class %-30s x%d", cn, count))
-	end
+	-- end
 
 	for _, inst in ipairs(descendants) do
 		if inst:IsA("Motor6D") then
