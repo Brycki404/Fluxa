@@ -5,16 +5,10 @@ local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 
-local ReplicationService = {}
+local FluxaTypes = require(script.Parent.FluxaTypes)
+local FluxaSettings = require(script.Parent.FluxaSettings)
 
-local REMOTE_EVENT_NAME = "FluxaReplication"
-local SEND_RATE_HZ = 30
-local ANIMATION_START_TIMES_INTERVAL = 0.25
--- TrackBindings change rarely (weapon/stance swap) but add bandwidth if sent
--- every packet.  We delta-replicate: include whenever the controller reports
--- its bindings as dirty, and also on a slow heartbeat so late-joining peers
--- recover within ~1s even if they miss the dirty packet.
-local TRACK_BINDINGS_SYNC_INTERVAL = 1.0
+local ReplicationService = {}
 
 local _remoteEvent = nil
 local _localController = nil
@@ -29,7 +23,7 @@ local function tryGetRemoteEvent()
 		return _remoteEvent
 	end
 
-	local existing = ReplicatedStorage:FindFirstChild(REMOTE_EVENT_NAME)
+	local existing = ReplicatedStorage:FindFirstChild(FluxaSettings.Get("REMOTE_EVENT_NAME", "FluxaReplication"))
 	if existing and existing:IsA("RemoteEvent") then
 		_remoteEvent = existing
 		return _remoteEvent
@@ -37,7 +31,7 @@ local function tryGetRemoteEvent()
 
 	if RunService:IsServer() then
 		local created = Instance.new("RemoteEvent")
-		created.Name = REMOTE_EVENT_NAME
+		created.Name = FluxaSettings.Get("REMOTE_EVENT_NAME", "FluxaReplication")
 		created.Parent = ReplicatedStorage
 		_remoteEvent = created
 		return _remoteEvent
@@ -52,7 +46,7 @@ local function ensureRemoteEvent()
 		return existingOrCreated
 	end
 
-	_remoteEvent = ReplicatedStorage:WaitForChild(REMOTE_EVENT_NAME)
+	_remoteEvent = ReplicatedStorage:WaitForChild(FluxaSettings.Get("REMOTE_EVENT_NAME", "FluxaReplication"), 10)
 	return _remoteEvent
 end
 
@@ -142,7 +136,7 @@ local function ensureServerReceiver()
 	end)
 end
 
-function ReplicationService.StartLocalReplication(controller)
+function ReplicationService.StartLocalReplication(controller, replicationMode)
 	if controller == nil then
 		return
 	end
@@ -150,14 +144,23 @@ function ReplicationService.StartLocalReplication(controller)
 	_localController = controller
 	ensureClientReceiver()
 
+	-- Determine replication mode (prefer controller property, then argument, then default)
+	local mode = replicationMode or (controller.GetReplicationMode and controller:GetReplicationMode()) or controller._replicationMode or FluxaTypes.ReplicationMode.ServerOwned
+	controller._replicationMode = mode
+
+	if mode == FluxaTypes.ReplicationMode.LocalOnly then
+		-- No replication, just run locally
+		return
+	end
+
 	if _sendConnection then
 		_sendConnection:Disconnect()
 		_sendConnection = nil
 	end
 
 	local sendAccumulator = 0
-	local animationStartAccumulator = ANIMATION_START_TIMES_INTERVAL
-	local trackBindingsSyncAccumulator = TRACK_BINDINGS_SYNC_INTERVAL
+	local animationStartAccumulator = FluxaSettings.Get("ANIMATION_START_TIMES_INTERVAL", 0.25)
+	local trackBindingsSyncAccumulator = FluxaSettings.Get("TRACK_BINDINGS_SYNC_INTERVAL", 1.0)
 
 	_sendConnection = RunService.Heartbeat:Connect(function(dt)
 		if not _localReplicationEnabled then
@@ -174,12 +177,12 @@ function ReplicationService.StartLocalReplication(controller)
 		animationStartAccumulator += dt
 		trackBindingsSyncAccumulator += dt
 
-		if sendAccumulator < (1 / SEND_RATE_HZ) then
+		if sendAccumulator < (1 / FluxaSettings.Get("SEND_RATE_HZ", 30)) then
 			return
 		end
 
 		sendAccumulator = 0
-		local includeAnimationStartTimes = animationStartAccumulator >= ANIMATION_START_TIMES_INTERVAL
+		local includeAnimationStartTimes = animationStartAccumulator >= FluxaSettings.Get("ANIMATION_START_TIMES_INTERVAL", 0.25)
 		if includeAnimationStartTimes then
 			animationStartAccumulator = 0
 		end
@@ -190,7 +193,7 @@ function ReplicationService.StartLocalReplication(controller)
 		if _localController ~= nil and _localController.IsTrackBindingsDirty ~= nil then
 			bindingsDirty = _localController:IsTrackBindingsDirty() == true
 		end
-		local includeTrackBindings = bindingsDirty or trackBindingsSyncAccumulator >= TRACK_BINDINGS_SYNC_INTERVAL
+		local includeTrackBindings = bindingsDirty or trackBindingsSyncAccumulator >= FluxaSettings.Get("TRACK_BINDINGS_SYNC_INTERVAL", 1.0)
 		if includeTrackBindings then
 			trackBindingsSyncAccumulator = 0
 		end

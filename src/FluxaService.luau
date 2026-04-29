@@ -6,78 +6,22 @@ local RunService = game:GetService("RunService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Signal = require(script.Parent.Signal)
+local FluxaTypes = require(script.Parent.FluxaTypes)
+local FluxaSettings = require(script.Parent.FluxaSettings)
+
+-- Type Imports
+type NPCEntry = FluxaTypes.NPCEntry
+type ControllerLike = FluxaTypes.ControllerLike
+type AnimTargetType = FluxaTypes.AnimTargetType
+type ResolvedAnimTarget = FluxaTypes.ResolvedAnimTarget
+type PlayOptions = FluxaTypes.PlayOptions
+type StopOptions = FluxaTypes.StopOptions
+type NPCPacketEnvelope = FluxaTypes.NPCPacketEnvelope
+type AnimCmdEnvelope = FluxaTypes.AnimCmdEnvelope
+type NPCReplicationOptions = FluxaTypes.NPCReplicationOptions
 
 local IS_SERVER = RunService:IsServer()
 local IS_CLIENT = RunService:IsClient()
-
-local NPC_REPLICATION_REMOTE = "FluxaService_NPCReplication"
-local NPC_NOTIFY_REMOTE = "FluxaService_NPCNotify"
-local ANIM_CMD_REMOTE = "FluxaService_AnimCmd"
-
-local NPC_SEND_RATE_HZ = 20
-local NPC_START_TIMES_INTERVAL = 0.25
-local DEFAULT_PLAY_RATE_LIMIT_WINDOW = 0.05
-
-type ControllerLike = {
-	Character: Model?,
-	GetReplicationPacket: ((self: any, options: any?) -> any)?,
-	ApplyReplicationPacket: ((self: any, packet: any) -> ())?,
-	Play: ((self: any, trackName: string, fadeTime: number?, weight: number?, speed: number?) -> ())?,
-	Stop: ((self: any, trackName: string?, fadeTime: number?) -> ())?,
-}
-
-type NPCReplicationOptions = {
-	Character: Model?,
-	RelevanceRadius: number?,
-	ShouldReplicateToPlayer: ((player: Player, npcId: string, controller: ControllerLike, character: Model?) -> boolean)?,
-}
-
-type NPCEntry = {
-	Controller: ControllerLike,
-	Character: Model?,
-	RelevanceRadius: number?,
-	ShouldReplicateToPlayer: ((player: Player, npcId: string, controller: ControllerLike, character: Model?) -> boolean)?,
-	SendAccumulator: number,
-	StartTimeAccumulator: number,
-}
-
-type AnimTargetType = "player" | "character" | "id"
-
-type ResolvedAnimTarget = {
-	TargetType: AnimTargetType,
-	TargetValue: any,
-}
-
-type PlayOptions = {
-	FadeTime: number?,
-	FadeInTime: number?,
-	Weight: number?,
-	Speed: number?,
-	RateLimitWindow: number?,
-	RateLimitKey: string?,
-}
-
-type StopOptions = {
-	FadeTime: number?,
-	FadeOutTime: number?,
-}
-
-type AnimCmdEnvelope = {
-	Authority: "server",
-	Action: "Play" | "Stop",
-	TargetType: AnimTargetType,
-	TargetValue: any,
-	TrackName: string,
-	FadeTime: number?,
-	Weight: number?,
-	Speed: number?,
-}
-
-type NPCPacketEnvelope = {
-	Authority: "server",
-	NpcId: string,
-	Packet: any,
-}
 
 local _registry = setmetatable({}, { __mode = "v" }) :: any
 local _characterRegistry = setmetatable({}, { __mode = "kv" }) :: any
@@ -197,7 +141,7 @@ local function makePlayRateLimitKey(target: ResolvedAnimTarget, trackName: strin
 end
 
 local function isRateLimited(target: ResolvedAnimTarget, trackName: string, options: PlayOptions?): boolean
-	local window = DEFAULT_PLAY_RATE_LIMIT_WINDOW
+	local window = FluxaSettings.Get("DEFAULT_PLAY_RATE_LIMIT_WINDOW", 0.05)
 	if options ~= nil and options.RateLimitWindow ~= nil then
 		window = options.RateLimitWindow
 	end
@@ -399,7 +343,7 @@ function FluxaService.DebugDump(): string
 end
 
 local function notifyPlayersAboutNpc(eventName: "added" | "removed", npcId: string, entry: NPCEntry?)
-	local remote = findRemote(NPC_NOTIFY_REMOTE)
+	local remote = findRemote(FluxaSettings.Get("NPC_NOTIFY_REMOTE", "FluxaService_NPCNotify"))
 	if remote == nil then
 		return
 	end
@@ -423,7 +367,7 @@ local function notifyPlayersAboutNpc(eventName: "added" | "removed", npcId: stri
 end
 
 local function tickNPCReplication(dt: number)
-	local remote = findRemote(NPC_REPLICATION_REMOTE)
+	local remote = findRemote(FluxaSettings.Get("NPC_REPLICATION_REMOTE", "FluxaService_NPCReplication"))
 	if remote == nil then
 		return
 	end
@@ -432,7 +376,7 @@ local function tickNPCReplication(dt: number)
 		entry.SendAccumulator += dt
 		entry.StartTimeAccumulator += dt
 
-		if entry.SendAccumulator < (1 / NPC_SEND_RATE_HZ) then
+		if entry.SendAccumulator < (1 / FluxaSettings.Get("NPC_SEND_RATE_HZ", 20)) then
 			continue
 		end
 		entry.SendAccumulator = 0
@@ -454,7 +398,7 @@ local function tickNPCReplication(dt: number)
 			Packet = packet,
 		}
 
-		if entry.StartTimeAccumulator < NPC_START_TIMES_INTERVAL then
+		if entry.StartTimeAccumulator < FluxaSettings.Get("NPC_START_TIMES_INTERVAL", 0.25) then
 			stripAnimationStartTimes(envelope.Packet)
 		else
 			entry.StartTimeAccumulator = 0
@@ -490,8 +434,8 @@ function FluxaService.StartNPCReplication(id: string, controller: ControllerLike
 	assert(type(id) == "string" and id ~= "", "FluxaService.StartNPCReplication: id must be a non-empty string")
 	assert(controller ~= nil, "FluxaService.StartNPCReplication: controller cannot be nil")
 
-	getOrCreateRemote(NPC_REPLICATION_REMOTE)
-	getOrCreateRemote(NPC_NOTIFY_REMOTE)
+	getOrCreateRemote(FluxaSettings.Get("NPC_REPLICATION_REMOTE", "FluxaService_NPCReplication"))
+	getOrCreateRemote(FluxaSettings.Get("NPC_NOTIFY_REMOTE", "FluxaService_NPCNotify"))
 
 	local npcOptions = normalizeNPCOptions(characterOrOptions, options)
 	local entry: NPCEntry = {
@@ -557,7 +501,7 @@ function FluxaService.PlayOnAll(target: any, trackName: string, options: PlayOpt
 	if isRateLimited(resolved, trackName, options) then
 		return false
 	end
-	getOrCreateRemote(ANIM_CMD_REMOTE):FireAllClients(buildPlayEnvelope(resolved, trackName, options))
+	getOrCreateRemote(FluxaSettings.Get("ANIM_CMD_REMOTE", "FluxaService_AnimCmd")):FireAllClients(buildPlayEnvelope(resolved, trackName, options))
 	return true
 end
 
@@ -567,7 +511,7 @@ function FluxaService.PlayFor(player: Player, target: any, trackName: string, op
 	if isRateLimited(resolved, trackName, options) then
 		return false
 	end
-	getOrCreateRemote(ANIM_CMD_REMOTE):FireClient(player, buildPlayEnvelope(resolved, trackName, options))
+	getOrCreateRemote(FluxaSettings.Get("ANIM_CMD_REMOTE", "FluxaService_AnimCmd")):FireClient(player, buildPlayEnvelope(resolved, trackName, options))
 	return true
 end
 
@@ -578,7 +522,7 @@ function FluxaService.PlayInRange(position: Vector3, radius: number, target: any
 		return false
 	end
 
-	local remote = getOrCreateRemote(ANIM_CMD_REMOTE)
+	local remote = getOrCreateRemote(FluxaSettings.Get("ANIM_CMD_REMOTE", "FluxaService_AnimCmd"))
 	local envelope = buildPlayEnvelope(resolved, trackName, options)
 	for _, player in ipairs(Players:GetPlayers()) do
 		local character = player.Character
@@ -593,20 +537,20 @@ end
 function FluxaService.StopOnAll(target: any, trackName: string?, options: StopOptions?)
 	assert(IS_SERVER, "FluxaService.StopOnAll must be called from the server")
 	local resolved = resolveAnimTarget(target)
-	getOrCreateRemote(ANIM_CMD_REMOTE):FireAllClients(buildStopEnvelope(resolved, trackName, options))
+	getOrCreateRemote(FluxaSettings.Get("ANIM_CMD_REMOTE", "FluxaService_AnimCmd")):FireAllClients(buildStopEnvelope(resolved, trackName, options))
 end
 
 function FluxaService.StopFor(player: Player, target: any, trackName: string?, options: StopOptions?)
 	assert(IS_SERVER, "FluxaService.StopFor must be called from the server")
 	local resolved = resolveAnimTarget(target)
-	getOrCreateRemote(ANIM_CMD_REMOTE):FireClient(player, buildStopEnvelope(resolved, trackName, options))
+	getOrCreateRemote(FluxaSettings.Get("ANIM_CMD_REMOTE", "FluxaService_AnimCmd")):FireClient(player, buildStopEnvelope(resolved, trackName, options))
 end
 
 function FluxaService.StopInRange(position: Vector3, radius: number, target: any, trackName: string?, options: StopOptions?)
 	assert(IS_SERVER, "FluxaService.StopInRange must be called from the server")
 	local resolved = resolveAnimTarget(target)
 	local envelope = buildStopEnvelope(resolved, trackName, options)
-	local remote = getOrCreateRemote(ANIM_CMD_REMOTE)
+	local remote = getOrCreateRemote(FluxaSettings.Get("ANIM_CMD_REMOTE", "FluxaService_AnimCmd"))
 	for _, player in ipairs(Players:GetPlayers()) do
 		local character = player.Character
 		local root = if character ~= nil then character:FindFirstChild("HumanoidRootPart") else nil
@@ -646,7 +590,7 @@ end
 
 if IS_CLIENT then
 	task.spawn(function()
-		local remote = ReplicatedStorage:WaitForChild(NPC_NOTIFY_REMOTE, 10)
+		local remote = ReplicatedStorage:WaitForChild(FluxaSettings.Get("NPC_NOTIFY_REMOTE", "FluxaService_NPCNotify"), 10)
 		if remote == nil or not remote:IsA("RemoteEvent") then
 			return
 		end
@@ -667,7 +611,7 @@ if IS_CLIENT then
 	end)
 
 	task.spawn(function()
-		local remote = ReplicatedStorage:WaitForChild(NPC_REPLICATION_REMOTE, 10)
+		local remote = ReplicatedStorage:WaitForChild(FluxaSettings.Get("NPC_REPLICATION_REMOTE", "FluxaService_NPCReplication"), 10)
 		if remote == nil or not remote:IsA("RemoteEvent") then
 			return
 		end
@@ -686,7 +630,7 @@ if IS_CLIENT then
 	end)
 
 	task.spawn(function()
-		local remote = ReplicatedStorage:WaitForChild(ANIM_CMD_REMOTE, 10)
+		local remote = ReplicatedStorage:WaitForChild(FluxaSettings.Get("ANIM_CMD_REMOTE", "FluxaService_AnimCmd"), 10)
 		if remote == nil or not remote:IsA("RemoteEvent") then
 			return
 		end
@@ -719,7 +663,8 @@ end
 
 if IS_SERVER then
 	Players.PlayerAdded:Connect(function(player)
-		local remote = findRemote(NPC_NOTIFY_REMOTE)
+		local remote = findRemote(FluxaSettings.Get("NPC_NOTIFY_REMOTE", "FluxaService_NPCNotify"))
+		 -- If the remote doesn't exist, there's no need to notify anyone about NPCs
 		if remote == nil then
 			return
 		end

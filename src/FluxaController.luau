@@ -6,190 +6,35 @@ local Workspace = game:GetService("Workspace")
 
 local AnimationTrack = require(script.Parent.AnimationTrack)
 local UniversalJointWriter = require(script.Parent.UniversalJointWriter)
+local FluxaTypes = require(script.Parent.FluxaTypes)
+local FluxaSettings = require(script.Parent.FluxaSettings)
+
+-- Type Imports
+type ControllerInstance = FluxaTypes.ControllerInstance
+type TrackState = FluxaTypes.TrackState
+type LayerState = FluxaTypes.LayerState
+type LayerReplicationState = FluxaTypes.LayerReplicationState
+type DriverReplicationMap = FluxaTypes.DriverReplicationMap
+type LayerDriverReplicationMap = FluxaTypes.LayerDriverReplicationMap
+type JointMaskInput = FluxaTypes.JointMaskInput
+type JointMask = FluxaTypes.JointMask
+type LayerBlendMode = FluxaTypes.LayerBlendMode
+type ReplicationSeekMode = FluxaTypes.ReplicationSeekMode
+type AnyMap = FluxaTypes.AnyMap
+type TrackConfig = FluxaTypes.TrackConfig
+type TrackSwapOptions = FluxaTypes.TrackSwapOptions
+type PoseData = FluxaTypes.PoseData
+type NumberMap = FluxaTypes.NumberMap
+type NewOptions = FluxaTypes.NewOptions
+type ReplicationMode = FluxaTypes.ReplicationMode
+type LayerConfig = FluxaTypes.LayerConfig
+type ReplicationPacketOptions = FluxaTypes.ReplicationPacketOptions
+type ReplicationPacket = FluxaTypes.ReplicationPacket
+type BlendTreeResolver = FluxaTypes.BlendTreeResolver
+type TrackBindingResolver = FluxaTypes.TrackBindingResolver
 
 local FluxaController = {}
 FluxaController.__index = FluxaController
-
-type NumberMap = {[string]: number}
-type AnyMap = {[string]: any}
-type JointMask = {[string]: boolean}
-type JointMaskList = {string}
-type JointMaskInput = JointMask | JointMaskList
-type PoseData = {[string]: CFrame}
-type LayerBlendMode = "Override" | "Additive"
-type ReplicationSeekMode = "Always" | "LoopingOnly" | "Never"
-type LayerReplicationState = {
-	Drivers: {[string]: any},
-	AnimationStartTimes: {[string]: number},
-}
-
-type DriverReplicationMap = {[string]: boolean}
-type LayerDriverReplicationMap = {[string]: DriverReplicationMap}
-type TrackBindingResolver = (self: ControllerInstance, trackName: string, bindingId: string, previousBindingId: string?) -> (any?, TrackConfig?)
-type ReplicationPacket = {
-	Timestamp: number,
-	Drivers: {[string]: any}?,
-	Layers: {[string]: LayerReplicationState},
-	TrackBindings: {[string]: string}?,
-}
-
-export type ReplicationPacketOptions = {
-	IncludeTrackBindings: boolean?,
-}
-
-local ANIMATION_START_REPLICATION_WINDOW = 0.6
-
-export type BlendTreeResolver = (self: ControllerInstance, dt: number) -> NumberMap?
-
-export type LayerConfig = {
-	Weight: number?,
-	BlendMode: LayerBlendMode?,
-	Mask: JointMaskInput?,
-	Order: number?,
-}
-
-export type TrackConfig = {
-	Asset: any,
-	BindingId: string?,
-	TrackOptions: {[string]: any}?,
-	PreservePhaseOnSwap: boolean?,
-	Layer: string?,
-	AutoManage: boolean?,
-	AutoReplicate: boolean?,
-	InitialWeight: number?,
-	ReplicationSeekMode: ReplicationSeekMode?,
-}
-
-export type TrackSwapOptions = {
-	PreservePhase: boolean?,
-	preservePhase: boolean?,
-	BindingId: string?,
-	TrackOptions: {[string]: any}?,
-}
-
-export type NewOptions = {
-	Character: Model,
-	AutoApplyPose: boolean?,
-	AutoStart: boolean?,
-	WeightSmoothingSpeed: number?,
-	ReplicationSeekMode: ReplicationSeekMode?,
-	-- Opt-in for TrackBindings replication.  Projects that don't use the
-	-- FluxaBindingCatalog / AssetManager pipeline don't want binding state
-	-- crossing the wire at all -- they load tracks by name on both sides
-	-- and peers have no resolver to turn incoming binding ids into assets.
-	-- Default off so existing setups migrate to the updated controller
-	-- without paying bandwidth or emitting "no resolver" warnings.
-	ReplicateTrackBindings: boolean?,
-	Drivers: AnyMap?,
-	Params: AnyMap?,
-	GlobalDriverReplication: DriverReplicationMap?,
-	LayerDriverReplication: LayerDriverReplicationMap?,
-	Layers: {[string]: LayerConfig}?,
-	Tracks: {[string]: TrackConfig}?,
-	BlendTrees: {[string]: BlendTreeResolver}?,
-	TrackBindingResolver: TrackBindingResolver?,
-	OnPreStep: ((self: ControllerInstance, dt: number) -> ())?,
-	OnPostStep: ((self: ControllerInstance, dt: number, finalPose: PoseData) -> ())?,
-	OnPostBlend: ((self: ControllerInstance, finalPose: PoseData, dt: number) -> PoseData?)?,
-}
-
-type LayerState = {
-	Weight: number,
-	BlendMode: LayerBlendMode,
-	Mask: JointMask?,
-	Order: number,
-}
-
-type TrackState = {
-	Name: string,
-	Layer: string,
-	Track: any,
-	AutoManage: boolean,
-	AutoReplicate: boolean,
-	ReplicationSeekMode: ReplicationSeekMode,
-}
-
-export type ControllerInstance = {
-	Character: Model,
-	AutoApplyPose: boolean,
-	WeightSmoothingSpeed: number,
-	OnPreStep: ((self: ControllerInstance, dt: number) -> ())?,
-	OnPostStep: ((self: ControllerInstance, dt: number, finalPose: PoseData) -> ())?,
-	OnPostBlend: ((self: ControllerInstance, finalPose: PoseData, dt: number) -> PoseData?)?,
-
-	AddLayer: (self: ControllerInstance, name: string, config: LayerConfig?) -> (),
-	RemoveLayer: (self: ControllerInstance, name: string) -> (),
-	SetLayerWeight: (self: ControllerInstance, name: string, weight: number) -> (),
-	SetLayerBlendMode: (self: ControllerInstance, name: string, blendMode: LayerBlendMode) -> (),
-	SetLayerMask: (self: ControllerInstance, name: string, mask: JointMaskInput?) -> (),
-	SetLayerDriver: (self: ControllerInstance, layerName: string, paramName: string, value: any) -> (),
-	GetLayerDriver: (self: ControllerInstance, layerName: string, paramName: string, fallbackToGlobal: boolean?) -> any,
-	SetLayerDriverReplication: (self: ControllerInstance, layerName: string, paramName: string, enabled: boolean) -> (),
-	GetLayerDriverReplication: (self: ControllerInstance, layerName: string, paramName: string) -> boolean,
-	MarkLayerAnimationStart: (self: ControllerInstance, layerName: string, animationName: string) -> number,
-	GetReplicationPacket: (self: ControllerInstance, options: ReplicationPacketOptions?) -> ReplicationPacket,
-	ApplyReplicationPacket: (self: ControllerInstance, packet: ReplicationPacket) -> (),
-    SetTrackBindingResolver: (self: ControllerInstance, resolver: TrackBindingResolver?) -> (),
-    GetTrackBinding: (self: ControllerInstance, name: string) -> string?,
-    GetTrackBindings: (self: ControllerInstance) -> {[string]: string},
-    IsTrackBindingsDirty: (self: ControllerInstance) -> boolean,
-    MarkTrackBindingsSent: (self: ControllerInstance) -> (),
-    SetTrackBindingsReplicationEnabled: (self: ControllerInstance, enabled: boolean) -> (),
-    GetTrackBindingsReplicationEnabled: (self: ControllerInstance) -> boolean,
-
-	LoadTrack: (self: ControllerInstance, name: string, asset: any, config: TrackConfig?) -> any,
-	SetTrackAsset: (self: ControllerInstance, name: string, asset: any, options: TrackSwapOptions?) -> any,
-	UnloadTrack: (self: ControllerInstance, name: string) -> (),
-	SetTrackLayer: (self: ControllerInstance, name: string, layerName: string) -> (),
-	SetTrackAutoReplicate: (self: ControllerInstance, name: string, enabled: boolean) -> (),
-	GetTrackAutoReplicate: (self: ControllerInstance, name: string) -> boolean,
-	SetTrackWeight: (self: ControllerInstance, name: string, weight: number) -> (),
-	GetTrackWeight: (self: ControllerInstance, name: string) -> number,
-	GetTrack: (self: ControllerInstance, name: string) -> any?,
-	GetPlayingTracks: (self: ControllerInstance) -> { any },
-
-	CreateBlendTree: (self: ControllerInstance, name: string, resolver: BlendTreeResolver) -> (),
-	RemoveBlendTree: (self: ControllerInstance, name: string) -> (),
-
-	Set: (self: ControllerInstance, key: string, value: any) -> (),
-	Get: (self: ControllerInstance, key: string) -> any,
-	SetBlend: (self: ControllerInstance, key: string, value: any) -> (),
-	SetDriver: (self: ControllerInstance, key: string, value: any) -> (),
-	GetDriver: (self: ControllerInstance, key: string) -> any,
-	SetGlobalDriverReplication: (self: ControllerInstance, key: string, enabled: boolean) -> (),
-	GetGlobalDriverReplication: (self: ControllerInstance, key: string) -> boolean,
-
-	Play: (self: ControllerInstance, trackName: string, fadeInTime: number?, weight: number?, speed: number?) -> (),
-	StopTrack: (self: ControllerInstance, trackName: string, fadeOutTime: number?) -> (),
-	Stop: (self: ControllerInstance, trackName: string?, fadeOutTime: number?) -> (),
-
-	Step: (self: ControllerInstance, dt: number) -> PoseData,
-	Start: (self: ControllerInstance) -> (),
-	StopLoop: (self: ControllerInstance) -> (),
-	Destroy: (self: ControllerInstance) -> (),
-
-	Layers: {[string]: LayerReplicationState},
-
-	_layers: {[string]: LayerState},
-	_layerNames: {string},
-	_tracks: {[string]: TrackState},
-	_trackNames: {string},
-	_trackTargets: NumberMap,
-	_smoothedTrackWeights: NumberMap,
-	_blendTrees: {[string]: BlendTreeResolver},
-	_trackBindings: {[string]: string},
-	_trackBindingsDirty: boolean,
-	_replicateTrackBindings: boolean,
-	_trackBindingResolver: TrackBindingResolver?,
-	_defaultReplicationSeekMode: ReplicationSeekMode,
-	_appliedReplicationAnimationStartTimes: {[string]: {[string]: number}},
-	_drivers: AnyMap,
-	_globalDriverReplication: DriverReplicationMap,
-	_layerDriverReplication: LayerDriverReplicationMap,
-	_jointMap: {[string]: any},
-	_retarget: {[string]: string},
-	_updateConnection: RBXScriptConnection?,
-}
 
 local function clamp01(v: number): number
 	return math.clamp(v, 0, 1)
@@ -287,7 +132,7 @@ local function collectRecentAnimationStartTimes(animationStartTimes: {[string]: 
 	local recentAnimationStartTimes: {[string]: number} = {}
 
 	for animationName, startTime in pairs(animationStartTimes) do
-		if now - startTime <= ANIMATION_START_REPLICATION_WINDOW then
+		if now - startTime <= FluxaSettings.Get("ANIMATION_START_TIMES_INTERVAL", 0.25) then
 			recentAnimationStartTimes[animationName] = startTime
 		else
 			animationStartTimes[animationName] = nil
@@ -546,6 +391,7 @@ function FluxaController.new(options: NewOptions): ControllerInstance
 	self.Layers = {}
 	self._jointMap, self._retarget = UniversalJointWriter.BuildJointMap(self.Character)
 	self._updateConnection = nil
+	self._replicationMode = options.ReplicationMode or FluxaTypes.ReplicationMode.ServerOwned
 
 	self:AddLayer("Base", { Weight = 1, BlendMode = "Override", Order = 0 })
 
@@ -572,6 +418,14 @@ function FluxaController.new(options: NewOptions): ControllerInstance
 	end
 
 	return self :: ControllerInstance
+end
+
+function FluxaController:SetReplicationMode(mode: ReplicationMode)
+	self._replicationMode = mode
+end
+
+function FluxaController:GetReplicationMode()
+	return self._replicationMode
 end
 
 function FluxaController.AddLayer(self: ControllerInstance, name: string, config: LayerConfig?)
