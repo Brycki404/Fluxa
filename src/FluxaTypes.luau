@@ -199,23 +199,16 @@ export type ControllerInstance = {
 }
 
 -- Fluxa Service
-export type ControllerLike = {
-	Character: Model?,
-	GetReplicationPacket: ((self: any, options: any?) -> any)?,
-	ApplyReplicationPacket: ((self: any, packet: any) -> ())?,
-	Play: ((self: any, trackName: string, fadeTime: number?, weight: number?, speed: number?) -> ())?,
-	Stop: ((self: any, trackName: string?, fadeTime: number?) -> ())?,
-}
 export type NPCReplicationOptions = {
 	Character: Model?,
 	RelevanceRadius: number?,
-	ShouldReplicateToPlayer: ((player: Player, npcId: string, controller: ControllerLike, character: Model?) -> boolean)?,
+	ShouldReplicateToPlayer: ((player: Player, npcId: string, controller: ControllerInstance, character: Model?) -> boolean)?,
 }
 export type NPCEntry = {
-	Controller: ControllerLike,
+	Controller: ControllerInstance,
 	Character: Model?,
 	RelevanceRadius: number?,
-	ShouldReplicateToPlayer: ((player: Player, npcId: string, controller: ControllerLike, character: Model?) -> boolean)?,
+	ShouldReplicateToPlayer: ((player: Player, npcId: string, controller: ControllerInstance, character: Model?) -> boolean)?,
 	SendAccumulator: number,
 	StartTimeAccumulator: number,
 }
@@ -388,27 +381,19 @@ export type BindingCatalogInstance = {
 }
 
 -- Fluxa Binding Set Manager
-export type BindingCatalogLike = {
-	GetSource: (self: any, bindingId: string) -> any,
-	GetFallbackBinding: (self: any, bindingId: string) -> string?,
-	ResolveFallbackChain: (self: any, bindingId: string) -> {string}?,
-	GetInitialTrackBindings: (self: any) -> {[string]: string},
-	GetSetBindings: (self: any, setName: string, includeInitialBindings: boolean?) -> {[string]: string}?,
-	ResolveBindings: (self: any, layerNames: {string}?, includeInitialBindings: boolean?) -> {[string]: string},
-}
 export type TrackConfigMap = {[string]: {[string]: any}}
 export type ActiveBindingLayer = {
 	Name: string,
 	Bindings: {[string]: string},
 }
 export type BindingSetManagerNewOptions = {
-	Catalog: BindingCatalogLike,
+	Catalog: BindingCatalogInstance,
 	AssetManager: any?,
 	SourceContainer: Instance?,
 	SourceLookup: {[string]: any}?,
 }
 export type BindingSetManagerInstance = {
-	Catalog: BindingCatalogLike,
+	Catalog: BindingCatalogInstance,
 	AssetManager: any,
 
 	RegisterSource: (self: BindingSetManagerInstance, name: string, source: any) -> (),
