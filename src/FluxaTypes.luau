@@ -1,14 +1,37 @@
 --!strict
 -- FluxaTypes: Shared type definitions for Fluxa modules
 
--- Fluxa Controller
+-- Pose
+export type PoseData = { [string]: CFrame }
+export type PoseInstance = {
+	Data: PoseData,
+	Clone: (self: PoseInstance) -> PoseInstance,
+	Lerp: (self: PoseInstance, other: PoseInstance, alpha: number) -> PoseInstance,
+	Additive: (self: PoseInstance, addPose: PoseInstance, weight: number) -> PoseInstance,
+	ApplyMask: (self: PoseInstance, mask: { [string]: boolean }) -> PoseInstance,
+}
 
+-- Universal Joint Writer
+export type JointInfo = {
+	Joint: Motor6D | Bone | AnimationConstraint,
+	Name: string,
+	Type: "Motor6D" | "Bone" | "AnimationConstraint",
+	Aliases: { string },
+}
+export type JointMap = { [string]: JointInfo }
+
+-- Retargeting
+export type RetargetMap = { [string]: string }
+export type RetargetOptions = {
+	Scale: number?,
+}
+
+-- Fluxa Controller
 export type NumberMap = {[string]: number}
 export type AnyMap = {[string]: any}
 export type JointMask = {[string]: boolean}
 export type JointMaskList = {string}
 export type JointMaskInput = JointMask | JointMaskList
-export type PoseData = {[string]: CFrame}
 export type LayerBlendMode = "Override" | "Additive"
 export type ReplicationSeekMode = "Always" | "LoopingOnly" | "Never"
 export type LayerReplicationState = {
@@ -227,6 +250,141 @@ export type NPCPacketEnvelope = {
 	Authority: "server",
 	NpcId: string,
 	Packet: any,
+}
+
+-- Animation Asset
+export type AnimationKeyframe = {
+	Name: string,
+	Time: number;
+	Value: CFrame;
+}
+export type AnimationChannel = {
+	Name: string;
+	Keyframes: { AnimationKeyframe };
+}
+export type AnimationEvent = {
+	Time: number;
+	Name: string;
+	Value: string;
+}
+export type AnimationSample = {
+	Transforms: { [string]: CFrame };
+}
+export type AnimationAssetInstance = {
+	Name: string;
+	Duration: number;
+	Channels: { [string]: {AnimationKeyframe} };
+	Events: { AnimationEvent };
+
+	Sample: (self: AnimationAssetInstance, time: number) -> AnimationSample;
+	GetLength: (self: AnimationAssetInstance) -> number;
+	GetEventsAt: (self: AnimationAssetInstance, time: number, window: number?) -> { AnimationEvent };
+}
+
+-- Animation Track
+export type SignalType = any
+export type AnimationTrackOptions = {
+	Speed: number?,
+	Looped: boolean?,
+	FadeInTime: number?,
+	FadeOutTime: number?,
+}
+export type AnimationTrackInstance = {
+	Asset: any,
+	Animation: any,
+	Length: number,
+	Time: number,
+	Speed: number,
+	Looped: boolean,
+	FadeInTime: number,
+	FadeOutTime: number,
+	Weight: number,
+	IsPlaying: boolean,
+	TimePosition: number,
+	Stopped: SignalType,
+	Ended: SignalType,
+	DidLoop: SignalType,
+	KeyframeReached: SignalType,
+	_FadeDir: number,
+	_ActiveFadeInTime: number,
+	_ActiveFadeOutTime: number,
+	_PlayTargetWeight: number,
+	_MarkerSignals: { [string]: SignalType },
+	_StoppedFired: boolean,
+	_EndedFired: boolean,
+	Play: (self: AnimationTrackInstance, fadeInTime: number?, weight: number?, speed: number?) -> nil,
+	Stop: (self: AnimationTrackInstance, fadeOutTime: number?) -> nil,
+	AdjustSpeed: (self: AnimationTrackInstance, speed: number) -> nil,
+	GetMarkerReachedSignal: (self: AnimationTrackInstance, markerName: string) -> SignalType,
+	GetTimeOfKeyframe: (self: AnimationTrackInstance, keyframeName: string) -> number,
+	Destroy: (self: AnimationTrackInstance) -> nil,
+	Update: (self: AnimationTrackInstance, dt: number) -> any,
+}
+
+-- Fluxa Asset Manager
+export type AnimationAssetSource = AnimationAssetInstance | number | string | Animation | KeyframeSequence
+export type LoadOptions = {
+	DestroySourceInstance: boolean?,
+	Overwrite: boolean?,
+	-- When true (default), LoadFromContainer walks descendants recursively.
+	-- Ignored by Load.
+	Recursive: boolean?,
+	-- When true, suppress the "ignored source mismatch" warning that fires
+	-- when Load is called with Overwrite=false and a different source from
+	-- what was previously cached under the same name.
+	SuppressMismatchWarning: boolean?,
+}
+export type LoadManyEntry = {
+	Name: string,
+	Source: AnimationAssetSource,
+	Options: LoadOptions?,
+}
+export type AssetManagerInstance = {
+	Load: (self: AssetManagerInstance, name: string, source: AnimationAssetSource, options: LoadOptions?) -> AnimationAssetInstance,
+	LoadMany: (self: AssetManagerInstance, entries: {[string]: AnimationAssetSource} | {LoadManyEntry}, options: LoadOptions?) -> {[string]: AnimationAssetInstance},
+	LoadFromContainer: (self: AssetManagerInstance, container: Instance, options: LoadOptions?) -> {[string]: AnimationAssetInstance},
+	Get: (self: AssetManagerInstance, name: string) -> AnimationAssetInstance?,
+	GetAll: (self: AssetManagerInstance) -> {[string]: AnimationAssetInstance},
+	Has: (self: AssetManagerInstance, name: string) -> boolean,
+	Unload: (self: AssetManagerInstance, name: string) -> (),
+	Clear: (self: AssetManagerInstance) -> (),
+
+	_assets: {[string]: AnimationAssetInstance},
+	_sources: {[string]: any},
+}
+
+-- Fluxa Binding Catalog
+export type BindingSources = {[string]: any}
+export type BindingFallbacks = {[string]: string}
+export type TrackBindings = {[string]: string}
+export type BindingSets = {[string]: TrackBindings}
+export type BindingLayers = {[string]: TrackBindings}
+export type BindingCatalogDefinition = {
+	Version: string?,
+	Sources: BindingSources?,
+	Fallbacks: BindingFallbacks?,
+	InitialTrackBindings: TrackBindings?,
+	Sets: BindingSets?,
+	Layers: BindingLayers?,
+}
+export type BindingCatalogInstance = {
+	Version: string,
+	Sources: BindingSources,
+	Fallbacks: BindingFallbacks,
+	InitialTrackBindings: TrackBindings,
+	Sets: BindingSets,
+	Layers: BindingLayers,
+
+	GetSource: (self: BindingCatalogInstance, bindingId: string) -> any,
+	GetFallbackBinding: (self: BindingCatalogInstance, bindingId: string) -> string?,
+	ResolveFallbackChain: (self: BindingCatalogInstance, bindingId: string) -> {string},
+	GetInitialTrackBinding: (self: BindingCatalogInstance, trackName: string) -> string?,
+	GetInitialTrackBindings: (self: BindingCatalogInstance) -> TrackBindings,
+	GetSet: (self: BindingCatalogInstance, setName: string) -> TrackBindings?,
+	GetSetBindings: (self: BindingCatalogInstance, setName: string, includeInitialBindings: boolean?) -> TrackBindings?,
+	GetLayer: (self: BindingCatalogInstance, layerName: string) -> TrackBindings?,
+	ResolveBindings: (self: BindingCatalogInstance, layerNames: {string}?, includeInitialBindings: boolean?) -> TrackBindings,
+	HasBinding: (self: BindingCatalogInstance, bindingId: string) -> boolean,
 }
 
 local module = {}

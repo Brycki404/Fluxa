@@ -3,37 +3,13 @@
 
 local AnimationAsset = {}
 
-export type AnimationKeyframe = {
-	Name: string,
-	Time: number;
-	Value: CFrame;
-}
+local FluxaTypes = require(script.Parent.FluxaTypes)
 
-export type AnimationChannel = {
-	Name: string;
-	Keyframes: { AnimationKeyframe };
-}
-
-export type AnimationEvent = {
-	Time: number;
-	Name: string;
-	Value: string;
-}
-
-export type AnimationSample = {
-	Transforms: { [string]: CFrame };
-}
-
-export type AnimationAssetInstance = {
-	Name: string;
-	Duration: number;
-	Channels: { [string]: {AnimationKeyframe} };
-	Events: { AnimationEvent };
-
-	Sample: (self: AnimationAssetInstance, time: number) -> AnimationSample;
-	GetLength: (self: AnimationAssetInstance) -> number;
-	GetEventsAt: (self: AnimationAssetInstance, time: number, window: number?) -> { AnimationEvent };
-}
+type AnimationKeyframe = FluxaTypes.AnimationKeyframe
+type AnimationChannel = FluxaTypes.AnimationChannel
+type AnimationEvent = FluxaTypes.AnimationEvent
+type AnimationSample = FluxaTypes.AnimationSample
+type AnimationAssetInstance = FluxaTypes.AnimationAssetInstance
 
 ---------------------------------------------------------------------
 -- UTILITIES

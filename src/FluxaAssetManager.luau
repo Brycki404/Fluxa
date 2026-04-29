@@ -4,44 +4,16 @@
 local KeyframeSequenceProvider = game:GetService("KeyframeSequenceProvider")
 
 local AnimationAsset = require(script.Parent.AnimationAsset)
+local FluxaTypes = require(script.Parent.FluxaTypes)
 
 local FluxaAssetManager = {}
 FluxaAssetManager.__index = FluxaAssetManager
 
-type AnimationAssetInstance = AnimationAsset.AnimationAssetInstance
-type AnimationAssetSource = AnimationAssetInstance | number | string | Animation | KeyframeSequence
-
-export type LoadOptions = {
-	DestroySourceInstance: boolean?,
-	Overwrite: boolean?,
-	-- When true (default), LoadFromContainer walks descendants recursively.
-	-- Ignored by Load.
-	Recursive: boolean?,
-	-- When true, suppress the "ignored source mismatch" warning that fires
-	-- when Load is called with Overwrite=false and a different source from
-	-- what was previously cached under the same name.
-	SuppressMismatchWarning: boolean?,
-}
-
-export type LoadManyEntry = {
-	Name: string,
-	Source: AnimationAssetSource,
-	Options: LoadOptions?,
-}
-
-export type AssetManagerInstance = {
-	Load: (self: AssetManagerInstance, name: string, source: AnimationAssetSource, options: LoadOptions?) -> AnimationAssetInstance,
-	LoadMany: (self: AssetManagerInstance, entries: {[string]: AnimationAssetSource} | {LoadManyEntry}, options: LoadOptions?) -> {[string]: AnimationAssetInstance},
-	LoadFromContainer: (self: AssetManagerInstance, container: Instance, options: LoadOptions?) -> {[string]: AnimationAssetInstance},
-	Get: (self: AssetManagerInstance, name: string) -> AnimationAssetInstance?,
-	GetAll: (self: AssetManagerInstance) -> {[string]: AnimationAssetInstance},
-	Has: (self: AssetManagerInstance, name: string) -> boolean,
-	Unload: (self: AssetManagerInstance, name: string) -> (),
-	Clear: (self: AssetManagerInstance) -> (),
-
-	_assets: {[string]: AnimationAssetInstance},
-	_sources: {[string]: any},
-}
+type AnimationAssetInstance = FluxaTypes.AnimationAssetInstance
+type AnimationAssetSource = FluxaTypes.AnimationAssetSource
+type LoadOptions = FluxaTypes.LoadOptions
+type LoadManyEntry = FluxaTypes.LoadManyEntry
+type AssetManagerInstance = FluxaTypes.AssetManagerInstance
 
 local function normalizeAnimationIdFromString(value: string): number?
 	local numericText = string.match(value, "%d+")

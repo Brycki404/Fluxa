@@ -3,47 +3,11 @@
 
 local AnimationTrack = {}
 local Signal = require(script.Parent.Signal)
+local FluxaTypes = require(script.Parent.FluxaTypes)
 
-type SignalType = any
-
-export type AnimationTrackOptions = {
-	Speed: number?,
-	Looped: boolean?,
-	FadeInTime: number?,
-	FadeOutTime: number?,
-}
-
-export type AnimationTrackInstance = {
-	Asset: any,
-	Animation: any,
-	Length: number,
-	Time: number,
-	Speed: number,
-	Looped: boolean,
-	FadeInTime: number,
-	FadeOutTime: number,
-	Weight: number,
-	IsPlaying: boolean,
-	TimePosition: number,
-	Stopped: SignalType,
-	Ended: SignalType,
-	DidLoop: SignalType,
-	KeyframeReached: SignalType,
-	_FadeDir: number,
-	_ActiveFadeInTime: number,
-	_ActiveFadeOutTime: number,
-	_PlayTargetWeight: number,
-	_MarkerSignals: { [string]: SignalType },
-	_StoppedFired: boolean,
-	_EndedFired: boolean,
-	Play: (self: AnimationTrackInstance, fadeInTime: number?, weight: number?, speed: number?) -> nil,
-	Stop: (self: AnimationTrackInstance, fadeOutTime: number?) -> nil,
-	AdjustSpeed: (self: AnimationTrackInstance, speed: number) -> nil,
-	GetMarkerReachedSignal: (self: AnimationTrackInstance, markerName: string) -> SignalType,
-	GetTimeOfKeyframe: (self: AnimationTrackInstance, keyframeName: string) -> number,
-	Destroy: (self: AnimationTrackInstance) -> nil,
-	Update: (self: AnimationTrackInstance, dt: number) -> any,
-}
+type AnimationTrackInstance = FluxaTypes.AnimationTrackInstance
+type AnimationTrackOptions = FluxaTypes.AnimationTrackOptions
+type SignalType = FluxaTypes.SignalType
 
 local function setPlaying(self: AnimationTrackInstance, isPlaying: boolean)
 	self.IsPlaying = isPlaying

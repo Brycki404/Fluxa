@@ -1,46 +1,20 @@
 --!strict
 -- FluxaBindingCatalog: shared binding definitions and set composition helpers.
 
+local FluxaTypes = require(script.Parent.FluxaTypes)
+type BindingSources = FluxaTypes.BindingSources
+type BindingFallbacks = FluxaTypes.BindingFallbacks
+type TrackBindings = FluxaTypes.TrackBindings
+type BindingSets = FluxaTypes.BindingSets
+type BindingLayers = FluxaTypes.BindingLayers
+type BindingCatalogDefinition = FluxaTypes.BindingCatalogDefinition
+type BindingCatalogInstance = FluxaTypes.BindingCatalogInstance
+
 local FluxaBindingCatalog = {}
 FluxaBindingCatalog.__index = FluxaBindingCatalog
 
-export type BindingSources = {[string]: any}
-export type BindingFallbacks = {[string]: string}
-export type TrackBindings = {[string]: string}
-export type BindingSets = {[string]: TrackBindings}
-export type BindingLayers = {[string]: TrackBindings}
-
-export type Definition = {
-	Version: string?,
-	Sources: BindingSources?,
-	Fallbacks: BindingFallbacks?,
-	InitialTrackBindings: TrackBindings?,
-	Sets: BindingSets?,
-	Layers: BindingLayers?,
-}
-
-export type BindingCatalogInstance = {
-	Version: string,
-	Sources: BindingSources,
-	Fallbacks: BindingFallbacks,
-	InitialTrackBindings: TrackBindings,
-	Sets: BindingSets,
-	Layers: BindingLayers,
-
-	GetSource: (self: BindingCatalogInstance, bindingId: string) -> any,
-	GetFallbackBinding: (self: BindingCatalogInstance, bindingId: string) -> string?,
-	ResolveFallbackChain: (self: BindingCatalogInstance, bindingId: string) -> {string},
-	GetInitialTrackBinding: (self: BindingCatalogInstance, trackName: string) -> string?,
-	GetInitialTrackBindings: (self: BindingCatalogInstance) -> TrackBindings,
-	GetSet: (self: BindingCatalogInstance, setName: string) -> TrackBindings?,
-	GetSetBindings: (self: BindingCatalogInstance, setName: string, includeInitialBindings: boolean?) -> TrackBindings?,
-	GetLayer: (self: BindingCatalogInstance, layerName: string) -> TrackBindings?,
-	ResolveBindings: (self: BindingCatalogInstance, layerNames: {string}?, includeInitialBindings: boolean?) -> TrackBindings,
-	HasBinding: (self: BindingCatalogInstance, bindingId: string) -> boolean,
-}
-
-function FluxaBindingCatalog.new(definition: Definition?): BindingCatalogInstance
-	local safeDefinition: Definition = definition or {
+function FluxaBindingCatalog.new(definition: BindingCatalogDefinition?): BindingCatalogInstance
+	local safeDefinition: BindingCatalogDefinition = definition or {
 		Version = nil,
 		Sources = nil,
 		Fallbacks = nil,

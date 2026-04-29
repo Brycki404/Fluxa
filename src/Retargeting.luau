@@ -1,13 +1,11 @@
 --!strict
 -- Retargeting: map joints between rigs and scale animation poses for retargeted skeletons.
 
+local FluxaTypes = require(script.Parent.FluxaTypes)
+type RetargetMap = FluxaTypes.RetargetMap
+type RetargetOptions = FluxaTypes.RetargetOptions
+
 local Retargeting = {}
-
-export type RetargetMap = { [string]: string }
-
-export type RetargetOptions = {
-	Scale: number?,
-}
 
 function Retargeting.MapPose(pose: { [string]: CFrame }, map: RetargetMap, options: RetargetOptions?)
 	local result: { [string]: CFrame } = {}

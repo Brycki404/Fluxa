@@ -1,19 +1,13 @@
 --!strict
 -- UniversalJointWriter: applies poses to arbitrary rigs with Motor6Ds and Bones.
 
+local FluxaTypes = require(script.Parent.FluxaTypes)
+type PoseData = FluxaTypes.PoseData
+type JointInfo = FluxaTypes.JointInfo
+type JointMap = FluxaTypes.JointMap
+type RetargetMap = FluxaTypes.RetargetMap
+
 local UniversalJointWriter = {}
-
-export type PoseData = { [string]: CFrame }
-
-export type JointInfo = {
-	Joint: Motor6D | Bone | AnimationConstraint,
-	Name: string,
-	Type: "Motor6D" | "Bone" | "AnimationConstraint",
-	Aliases: { string },
-}
-
-export type JointMap = { [string]: JointInfo }
-export type RetargetMap = { [string]: string }
 
 local AMBIGUOUS_ALIAS = ""
 

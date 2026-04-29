@@ -1,17 +1,11 @@
 --!strict
 -- Pose module: represents a joint transform dictionary and provides pose math.
 
+local FluxaTypes = require(script.Parent.FluxaTypes)
+type PoseData = FluxaTypes.PoseData
+type PoseInstance = FluxaTypes.PoseInstance
+
 local Pose = {}
-
-export type PoseData = { [string]: CFrame }
-
-export type PoseInstance = {
-	Data: PoseData,
-	Clone: (self: PoseInstance) -> PoseInstance,
-	Lerp: (self: PoseInstance, other: PoseInstance, alpha: number) -> PoseInstance,
-	Additive: (self: PoseInstance, addPose: PoseInstance, weight: number) -> PoseInstance,
-	ApplyMask: (self: PoseInstance, mask: { [string]: boolean }) -> PoseInstance,
-}
 
 local function new(data: PoseData?): PoseInstance
 	local i = {} :: PoseInstance
