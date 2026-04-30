@@ -21,8 +21,8 @@ local FluxaReplicationService = Fluxa.FluxaReplicationService
 local FluxaService = Fluxa.FluxaService
 local Example5BindingCatalog = require(script.Parent.Example5BindingCatalog)
 
-local SLOW_WALK_SPEED = 2.9
-local BASE_WALK_SPEED = 2.9
+local SLOW_WALK_SPEED = 6.2
+local BASE_WALK_SPEED = 6.2
 local MAX_RUN_SPEED = 24
 local MOMENTUM_BUILD_RATE = 0.8
 local MOMENTUM_DECAY_RATE = 0.4
