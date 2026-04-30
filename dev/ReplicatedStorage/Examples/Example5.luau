@@ -377,9 +377,13 @@ local function disableBuiltInCharacterAnimation(character: Model)
 end
 
 local function createFluxaController(character: Model, bindingSetManager, isLocalController: boolean)
-		-- Persistent variable for smoothing camera look direction
-		local smoothedLookDir = nil
-		local LOOK_LERP_SPEED = 12 -- higher = snappier, lower = smoother
+	if not isLocalController then
+		print("[Fluxa][DEBUG] Creating remote controller for:", character:GetFullName())
+	end
+
+	-- Persistent variable for smoothing camera look direction
+	local smoothedLookDir = nil
+	local LOOK_LERP_SPEED = 12 -- higher = snappier, lower = smoother
 	local upperBodyMask = {
 		"UpperTorso",
 		"Torso",
@@ -403,15 +407,15 @@ local function createFluxaController(character: Model, bindingSetManager, isLoca
 	local smoothedAimPitch = 0
 	local lastObservedBaseState = "Ground"
 	local trackConfigs = {
-		Idle = { Layer = "Base", AutoManage = true, InitialWeight = 1, TrackOptions = { Looped = true, Speed = 1, FadeInTime = 0.2, FadeOutTime = 0.2 } },
-		Walk = { Layer = "Base", AutoManage = true, PreservePhaseOnSwap = true, TrackOptions = { Looped = true, Speed = 1, FadeInTime = 0.2, FadeOutTime = 0.2 } },
-		Run = { Layer = "Base", AutoManage = true, PreservePhaseOnSwap = true, TrackOptions = { Looped = true, Speed = 1, FadeInTime = 0.18, FadeOutTime = 0.2 } },
-		SlowWalk = { Layer = "Base", AutoManage = true, PreservePhaseOnSwap = true, TrackOptions = { Looped = true, Speed = 1, FadeInTime = 0.2, FadeOutTime = 0.24 } },
-		Jump = { Layer = "Base", AutoManage = false, ReplicationSeekMode = "Never", TrackOptions = { Looped = false, Speed = 1, FadeInTime = 0.08, FadeOutTime = 0.16 } },
-		Fall = { Layer = "Base", AutoManage = true, TrackOptions = { Looped = true, Speed = 1, FadeInTime = 0.14, FadeOutTime = 0.18 } },
-		Land = { Layer = "Landing", AutoManage = false, ReplicationSeekMode = "Never", TrackOptions = { Looped = false, Speed = 1, FadeInTime = 0.08, FadeOutTime = 0.08 } },
-		Climb = { Layer = "Base", AutoManage = true, PreservePhaseOnSwap = true, TrackOptions = { Looped = true, Speed = 1, FadeInTime = 0.18, FadeOutTime = 0.22 } },
-		Attack = { Layer = "UpperBody", AutoManage = false, InitialWeight = 0, ReplicationSeekMode = "Never", TrackOptions = { Looped = false, Speed = 1, FadeInTime = 0.08, FadeOutTime = 0.14 } },
+		Idle = { Layer = "Base", AutoManage = true, AutoReplicate = true, InitialWeight = 1, TrackOptions = { Looped = true, Speed = 1, FadeInTime = 0.2, FadeOutTime = 0.2 } },
+		Walk = { Layer = "Base", AutoManage = true, AutoReplicate = true, PreservePhaseOnSwap = true, TrackOptions = { Looped = true, Speed = 1, FadeInTime = 0.2, FadeOutTime = 0.2 } },
+		Run = { Layer = "Base", AutoManage = true, AutoReplicate = true, PreservePhaseOnSwap = true, TrackOptions = { Looped = true, Speed = 1, FadeInTime = 0.18, FadeOutTime = 0.2 } },
+		SlowWalk = { Layer = "Base", AutoManage = true, AutoReplicate = true, PreservePhaseOnSwap = true, TrackOptions = { Looped = true, Speed = 1, FadeInTime = 0.2, FadeOutTime = 0.24 } },
+		Jump = { Layer = "Base", AutoManage = false, AutoReplicate = true, ReplicationSeekMode = "Never", TrackOptions = { Looped = false, Speed = 1, FadeInTime = 0.08, FadeOutTime = 0.16 } },
+		Fall = { Layer = "Base", AutoManage = true, AutoReplicate = true, TrackOptions = { Looped = true, Speed = 1, FadeInTime = 0.14, FadeOutTime = 0.18 } },
+		Land = { Layer = "Landing", AutoManage = false, AutoReplicate = true, InitialWeight = 1, ReplicationSeekMode = "Never", TrackOptions = { Looped = false, Speed = 1, FadeInTime = 0.08, FadeOutTime = 0.08 } },
+		Climb = { Layer = "Base", AutoManage = true, AutoReplicate = true, PreservePhaseOnSwap = true, TrackOptions = { Looped = true, Speed = 1, FadeInTime = 0.18, FadeOutTime = 0.22 } },
+		Attack = { Layer = "UpperBody", AutoManage = false, AutoReplicate = true, InitialWeight = 1, ReplicationSeekMode = "Never",  TrackOptions = { Looped = false, Speed = 1, FadeInTime = 0.08, FadeOutTime = 0.14 } },
 	}
 
 	local controller = FluxaController.new({
@@ -433,7 +437,6 @@ local function createFluxaController(character: Model, bindingSetManager, isLoca
 
 			local locomotionCycleRate = 0
 			if moving then
-				print("desired rate:", smoothedPlanarSpeed / BASE_WALK_SPEED)
 				locomotionCycleRate = math.clamp(smoothedPlanarSpeed / BASE_WALK_SPEED, LOCOMOTION_MIN_CYCLE_RATE, LOCOMOTION_MAX_CYCLE_RATE)
 			end
 
@@ -497,6 +500,10 @@ local function createFluxaController(character: Model, bindingSetManager, isLoca
 				end
 			end
 
+			-- Set Attack track weight for both local and remote controllers
+			if attackTrack then
+				attackTrack.Weight = attackPoseInfluence
+			end
 			innerController:SetLayerWeight("UpperBody", attackPoseInfluence)
 		end,
 		OnPostBlend = function(innerController, finalPose, dt)
@@ -699,6 +706,13 @@ local function createFluxaController(character: Model, bindingSetManager, isLoca
 		local initialConfig = table.clone(trackConfig)
 		initialConfig.BindingId = Example5BindingCatalog:GetInitialTrackBinding(trackName)
 		local track = bindingSetManager:LoadTrack(controller, trackName, initialConfig)
+		if not isLocalController then
+			if track then
+				print("[Fluxa][DEBUG][Remote] Loaded track:", trackName, "Asset:", tostring(track.Asset))
+			else
+				warn("[Fluxa][DEBUG][Remote] Failed to load track:", trackName)
+			end
+		end
 		if track ~= nil then
 			updateTrackRef(trackName, track)
 		end
@@ -932,6 +946,24 @@ function module:Destroy()
 	end
 	for id in pairs(_npcControllers) do
 		destroyNPCController(id)
+	end
+end
+
+-- Patch FluxaController.ApplyReplicationPacket for debug
+local origApplyReplicationPacket = FluxaController.ApplyReplicationPacket
+FluxaController.ApplyReplicationPacket = function(self, packet)
+	if packet and packet.Layers and packet.Layers.UpperBody and packet.Layers.UpperBody.AnimationStartTimes then
+		for anim, time in pairs(packet.Layers.UpperBody.AnimationStartTimes) do
+			print("[Fluxa][DEBUG][Replication] UpperBody AnimationStartTimes:", anim, time)
+		end
+	end
+	origApplyReplicationPacket(self, packet)
+	-- After applying, check if Attack track exists and is playing
+	local attackTrack = self.GetTrack and self:GetTrack("Attack")
+	if attackTrack then
+		print("[Fluxa][DEBUG][Replication] Attack track exists. IsPlaying:", attackTrack.IsPlaying, "Weight:", attackTrack.Weight)
+	else
+		warn("[Fluxa][DEBUG][Replication] Attack track missing on controller:", tostring(self.Character and self.Character:GetFullName() or self))
 	end
 end
 

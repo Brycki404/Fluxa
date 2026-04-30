@@ -391,7 +391,7 @@ function FluxaController.new(options: NewControllerOptions): ControllerInstance
 	self.Layers = {}
 	self._jointMap, self._retarget = UniversalJointWriter.BuildJointMap(self.Character)
 	self._updateConnection = nil
-	self._replicationMode = options.ReplicationMode or FluxaTypes.ReplicationMode.ServerOwned
+	self._replicationMode = options.ReplicationMode or FluxaTypes.ReplicationMode.ClientOwned
 
 	self:AddLayer("Base", { Weight = 1, BlendMode = "Override", Order = 0 })
 

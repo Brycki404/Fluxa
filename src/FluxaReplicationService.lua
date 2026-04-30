@@ -148,7 +148,7 @@ function ReplicationService.StartLocalReplication(controller, replicationMode: R
 	ensureClientReceiver()
 
 	-- Determine replication mode (prefer controller property, then argument, then default)
-	local mode = replicationMode or (controller.GetReplicationMode and controller:GetReplicationMode()) or controller._replicationMode or FluxaTypes.ReplicationMode.ServerOwned
+	local mode = replicationMode or (controller.GetReplicationMode and controller:GetReplicationMode()) or controller._replicationMode or FluxaTypes.ReplicationMode.ClientOwned
 	controller._replicationMode = mode
 
 	-- ReplicationMode logic
@@ -269,10 +269,11 @@ function ReplicationService.SendLocalPacket()
 	-- Respect ReplicationMode
 	local mode = (_localController and (_localController.GetReplicationMode and _localController:GetReplicationMode()))
 		or (_localController and _localController._replicationMode)
-		or FluxaTypes.ReplicationMode.ServerOwned
+		or FluxaTypes.ReplicationMode.ClientOwned
 
 	-- In ServerOwned mode, never send local packets (neither client nor server)
 	if mode == FluxaTypes.ReplicationMode.ServerOwned or mode == FluxaTypes.ReplicationMode.LocalOnly then
+		warn("ServerOwned or LocalOnly on SendLocalPacket; ignoring packet send")
 		return
 	end
 

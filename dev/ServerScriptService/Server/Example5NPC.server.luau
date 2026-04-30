@@ -175,6 +175,7 @@ local function createServerController(character: Model, bindingSetManager)
 		AutoStart = true,
 		ReplicationSeekMode = "LoopingOnly",
 		ReplicateTrackBindings = true,
+		ReplicationMode = "ServerOwned",
 		OnPreStep = function(innerController, dt)
 			local smoothedPlanarSpeed = getLayerBlend(innerController, "Base", "SmoothedPlanarSpeed", 0)
 			local moving = getLayerBlend(innerController, "Base", "Moving", false) == true
