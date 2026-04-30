@@ -377,13 +377,6 @@ local function disableBuiltInCharacterAnimation(character: Model)
 end
 
 local function createFluxaController(character: Model, bindingSetManager, isLocalController: boolean)
-	if not isLocalController then
-		print("[Fluxa][DEBUG] Creating remote controller for:", character:GetFullName())
-	end
-
-	-- Persistent variable for smoothing camera look direction
-	local smoothedLookDir = nil
-	local LOOK_LERP_SPEED = 12 -- higher = snappier, lower = smoother
 	local upperBodyMask = {
 		"UpperTorso",
 		"Torso",
@@ -500,10 +493,6 @@ local function createFluxaController(character: Model, bindingSetManager, isLoca
 				end
 			end
 
-			-- Set Attack track weight for both local and remote controllers
-			if attackTrack then
-				attackTrack.Weight = attackPoseInfluence
-			end
 			innerController:SetLayerWeight("UpperBody", attackPoseInfluence)
 		end,
 		OnPostBlend = function(innerController, finalPose, dt)
@@ -706,13 +695,13 @@ local function createFluxaController(character: Model, bindingSetManager, isLoca
 		local initialConfig = table.clone(trackConfig)
 		initialConfig.BindingId = Example5BindingCatalog:GetInitialTrackBinding(trackName)
 		local track = bindingSetManager:LoadTrack(controller, trackName, initialConfig)
-		if not isLocalController then
-			if track then
-				print("[Fluxa][DEBUG][Remote] Loaded track:", trackName, "Asset:", tostring(track.Asset))
-			else
-				warn("[Fluxa][DEBUG][Remote] Failed to load track:", trackName)
-			end
-		end
+		-- if not isLocalController then
+		-- 	if track then
+		-- 		print("[Fluxa][DEBUG][Remote] Loaded track:", trackName, "Asset:", tostring(track.Asset))
+		-- 	else
+		-- 		warn("[Fluxa][DEBUG][Remote] Failed to load track:", trackName)
+		-- 	end
+		-- end
 		if track ~= nil then
 			updateTrackRef(trackName, track)
 		end
@@ -949,22 +938,22 @@ function module:Destroy()
 	end
 end
 
--- Patch FluxaController.ApplyReplicationPacket for debug
-local origApplyReplicationPacket = FluxaController.ApplyReplicationPacket
-FluxaController.ApplyReplicationPacket = function(self, packet)
-	if packet and packet.Layers and packet.Layers.UpperBody and packet.Layers.UpperBody.AnimationStartTimes then
-		for anim, time in pairs(packet.Layers.UpperBody.AnimationStartTimes) do
-			print("[Fluxa][DEBUG][Replication] UpperBody AnimationStartTimes:", anim, time)
-		end
-	end
-	origApplyReplicationPacket(self, packet)
-	-- After applying, check if Attack track exists and is playing
-	local attackTrack = self.GetTrack and self:GetTrack("Attack")
-	if attackTrack then
-		print("[Fluxa][DEBUG][Replication] Attack track exists. IsPlaying:", attackTrack.IsPlaying, "Weight:", attackTrack.Weight)
-	else
-		warn("[Fluxa][DEBUG][Replication] Attack track missing on controller:", tostring(self.Character and self.Character:GetFullName() or self))
-	end
-end
+-- -- Patch FluxaController.ApplyReplicationPacket for debug
+-- local origApplyReplicationPacket = FluxaController.ApplyReplicationPacket
+-- FluxaController.ApplyReplicationPacket = function(self, packet)
+-- 	if packet and packet.Layers and packet.Layers.UpperBody and packet.Layers.UpperBody.AnimationStartTimes then
+-- 		for anim, time in pairs(packet.Layers.UpperBody.AnimationStartTimes) do
+-- 			print("[Fluxa][DEBUG][Replication] UpperBody AnimationStartTimes:", anim, time)
+-- 		end
+-- 	end
+-- 	origApplyReplicationPacket(self, packet)
+-- 	-- After applying, check if Attack track exists and is playing
+-- 	local attackTrack = self.GetTrack and self:GetTrack("Attack")
+-- 	if attackTrack then
+-- 		print("[Fluxa][DEBUG][Replication] Attack track exists. IsPlaying:", attackTrack.IsPlaying, "Weight:", attackTrack.Weight)
+-- 	else
+-- 		warn("[Fluxa][DEBUG][Replication] Attack track missing on controller:", tostring(self.Character and self.Character:GetFullName() or self))
+-- 	end
+-- end
 
 return module

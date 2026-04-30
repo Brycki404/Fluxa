@@ -273,7 +273,6 @@ function ReplicationService.SendLocalPacket()
 
 	-- In ServerOwned mode, never send local packets (neither client nor server)
 	if mode == FluxaTypes.ReplicationMode.ServerOwned or mode == FluxaTypes.ReplicationMode.LocalOnly then
-		warn("ServerOwned or LocalOnly on SendLocalPacket; ignoring packet send")
 		return
 	end
 
