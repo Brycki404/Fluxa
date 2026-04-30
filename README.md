@@ -51,7 +51,6 @@ It is designed so you can build your own controller graph instead of exposing ra
 local Fluxa = require(ReplicatedStorage.Packages.fluxa)
 local controller = Fluxa.FluxaController.new({
 	Character = character,
-	AutoStart = true,
 	Drivers = {
 		Speed = 0,
 		Direction = Vector3.zero,

@@ -172,7 +172,6 @@ local function createServerController(character: Model, bindingSetManager)
 	local controller = FluxaController.new({
 		Character = character,
 		AutoApplyPose = false,
-		AutoStart = true,
 		ReplicationSeekMode = "LoopingOnly",
 		ReplicateTrackBindings = true,
 		ReplicationMode = "ServerOwned",

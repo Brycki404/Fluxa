@@ -360,7 +360,6 @@ local function createFluxaController(character: Model, assets, isLocalController
 	local controller = FluxaController.new({
 		Character = character,
 		AutoApplyPose = true,
-		AutoStart = true,
 		ReplicationSeekMode = "LoopingOnly",
 		OnPreStep = function(innerController, dt)
 			local currentBaseState = getBaseState(innerController)

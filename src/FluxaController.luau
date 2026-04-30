@@ -413,10 +413,6 @@ function FluxaController.new(options: NewControllerOptions): ControllerInstance
 		end
 	end
 
-	if options.AutoStart then
-		self:Start()
-	end
-
 	return self :: ControllerInstance
 end
 

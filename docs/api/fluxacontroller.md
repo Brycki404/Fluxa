@@ -52,7 +52,6 @@ Passed to `FluxaController.new`.
 | `Tracks` | `{[string]: TrackConfig}` | Named track definitions |
 | `BlendTrees` | `{[string]: BlendTreeFn}?` | Named blend tree functions |
 | `TrackBindingResolver` | `function?` | Resolves replicated `BindingId` values into local assets |
-| `AutoStart` | `boolean?` | Starts the internal step loop immediately |
 | `WeightSmoothingSpeed` | `number?` | Smoothing speed for weight interpolation |
 | `ReplicationSeekMode` | `"Always"\|"LoopingOnly"\|"Never"?` | Default seek mode for tracks that do not override it |
 | `Drivers` / `Params` | `{[string]: any}?` | Initial global drivers (`Params` is legacy alias) |

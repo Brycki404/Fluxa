@@ -78,7 +78,6 @@ export type TrackSwapOptions = {
 export type NewControllerOptions = {
 	Character: Model,
 	AutoApplyPose: boolean?,
-	AutoStart: boolean?,
 	WeightSmoothingSpeed: number?,
 	ReplicationSeekMode: ReplicationSeekMode?,
 	ReplicationMode: ReplicationMode?,

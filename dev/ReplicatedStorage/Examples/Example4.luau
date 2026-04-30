@@ -358,7 +358,6 @@ local function createFluxaController(character: Model, bindingSetManager, isLoca
 	local controller = FluxaController.new({
 		Character = character,
 		AutoApplyPose = true,
-		AutoStart = true,
 		ReplicationSeekMode = "LoopingOnly",
 		OnPreStep = function(innerController, dt)
 			local currentBaseState = getBaseState(innerController)
