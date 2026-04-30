@@ -679,9 +679,11 @@ if IS_SERVER then
 	
 end
 
+-- workspace.SignalBehavior has to be Immediate for Fluxa to sit in between Humanoid.Animator / AnimationController instances and IKControl instances in the Task Scheduler.
 
 if IS_CLIENT then
 	local _bound = false
+	local _bindingUpdateConnection: RBXScriptConnection? = nil
 	local function stepAllControllers(dt)
 		-- Gather all controllers and sort by priority:
 		-- 1. LocalPlayer
@@ -733,23 +735,21 @@ if IS_CLIENT then
 	function FluxaService.Start()
 		if not _bound then
 			_bound = true
-			RunService:BindToRenderStep(
-				"FluxaUpdate",
-				Enum.RenderPriority.First.Value, -- Adjust as needed
-				stepAllControllers
-			)
+			_bindingUpdateConnection = RunService.Stepped:Connect(function(_t: number, dt: number) 
+				stepAllControllers(dt)
+			end)
 		end
 	end
 
 	function FluxaService.StopLoop()
 		if _bound then
 			_bound = false
-			pcall(function()
-				RunService:UnbindFromRenderStep("FluxaUpdate")
-			end)
+			if _bindingUpdateConnection then
+				_bindingUpdateConnection:Disconnect()
+				_bindingUpdateConnection = nil
+			end
 		end
 	end
 end
-
 
 return FluxaService

@@ -821,6 +821,8 @@ local function bootstrapRemotePlayer(player, bindingSetManager)
 end
 
 function module:Start(_clientScript: LocalScript)
+	FluxaService.Start()
+	
 	if #_connections > 0 then
 		return
 	end

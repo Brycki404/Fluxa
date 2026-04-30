@@ -25,6 +25,8 @@ Settings.ANIMATION_START_TIMES_INTERVAL = 0.25
 -- recover within ~1s even if they miss the dirty packet.
 Settings.TRACK_BINDINGS_SYNC_INTERVAL = 1.0
 
+Settings.SIGNAL_BEHAVIOR = Enum.SignalBehavior.Default
+
 -- Add more shared settings here as needed
 
 

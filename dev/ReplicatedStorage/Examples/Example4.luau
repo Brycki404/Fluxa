@@ -12,6 +12,7 @@ local Workspace = game:GetService("Workspace")
 local LocalPlayer = Players.LocalPlayer
 
 local Fluxa = require(ReplicatedStorage.Packages.fluxa)
+local FluxaService = require(ReplicatedStorage.Packages.fluxa.FluxaService)
 local FluxaController = Fluxa.FluxaController
 local FluxaBindingSetManager = Fluxa.FluxaBindingSetManager
 local FluxaReplicationService = Fluxa.FluxaReplicationService
@@ -619,6 +620,8 @@ local function bootstrapRemotePlayer(player, bindingSetManager)
 end
 
 function module:Start(_clientScript: LocalScript)
+	FluxaService.Start()
+	
 	local character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
 	local humanoid = character:WaitForChild("Humanoid")
 	local root = character:WaitForChild("HumanoidRootPart")
