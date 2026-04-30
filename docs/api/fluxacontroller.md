@@ -320,13 +320,14 @@ Advances the controller by `dt` seconds. Runs `OnPreStep`, resolves blend tree w
 
 Call this manually in `RunService.RenderStepped` when not using `:Start()`.
 
+
 #### `controller:Start()`
 
-Starts the internal `RenderStepped` loop, calling `:Step(dt)` automatically each frame.
+**No-op.** Stepping is now managed globally by `FluxaService` on the client. Register your controller with `FluxaService.RegisterController` and it will be stepped automatically.
 
 #### `controller:StopLoop()`
 
-Stops the internal `RenderStepped` loop. Does not affect playing tracks.
+**No-op.** Stepping is now managed globally by `FluxaService`.
 
 #### `controller:Destroy()`
 

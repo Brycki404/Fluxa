@@ -4,7 +4,7 @@ Module path: `Fluxa.FluxaAssetManager`
 
 `FluxaAssetManager` loads and caches `AnimationAsset` instances by name. It accepts raw `AnimationId` values, `Animation` instances, or `KeyframeSequence` instances and converts them into Fluxa-ready assets.
 
-Internally, the manager normalizes all supported authoring inputs into `AnimationAsset` instances. Consumers reading from the manager only ever receive parsed `AnimationAsset` values.
+Internally, the manager normalizes all supported authoring inputs into `AnimationAsset` instances. Consumers reading from the manager only ever receive parsed `AnimationAsset` values. Playback and stepping of assets is managed globally by `FluxaService` on the client.
 
 ## Supported sources
 

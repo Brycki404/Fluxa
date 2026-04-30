@@ -1087,28 +1087,7 @@ function FluxaController.Step(self: ControllerInstance, dt: number): PoseData
 	return finalPose
 end
 
-function FluxaController.Start(self: ControllerInstance)
-	if self._updateConnection then
-		return
-	end
-
-	-- Allows for existence of Roblox Animator and AnimationController on the same character, stepping after Roblox's built-in animation system to ensure our poses apply on top, but allows for IKControl instances to still run overtop of Fluxa!!! :D
-	-- Note! Worskpace.SignalBehavior needs to be Default and not Deferred for IKControls to work with Fluxa!
-	self._updateConnection = RunService.Stepped:Connect(function(_t, dt)
-		self:Step(dt)
-	end)
-end
-
-function FluxaController.StopLoop(self: ControllerInstance)
-	if self._updateConnection then
-		self._updateConnection:Disconnect()
-		self._updateConnection = nil
-	end
-end
-
 function FluxaController.Destroy(self: ControllerInstance)
-	self:StopLoop()
-
 	for _, track in pairs(self._tracks) do
 		if track.Track.IsPlaying then
 			track.Track:Stop(0)

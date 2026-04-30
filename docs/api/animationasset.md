@@ -101,7 +101,7 @@ Returns: `AnimationSample`
 
 Each channel is sampled by linear interpolation between the two nearest keyframes. Before the first keyframe the first value is held; after the last keyframe the last value is held. Sampling does not wrap.
 
-`AnimationTrack.Update` calls this internally every frame. You generally do not call it directly.
+`AnimationTrack.Update` calls this internally every frame, and this is managed by the global step loop in `FluxaService` (client-side). You generally do not call it directly.
 
 #### `asset:GetLength()`
 

@@ -49,4 +49,6 @@ local function DirectionalTree(ctrl, dt)
 end
 ```
 
+Blend tree evaluation is triggered automatically each frame by the global step loop in `FluxaService` (client-side). You do not need to manually call blend tree functions.
+
 For full documentation of the `BlendTree` module API, see the [Fluxa GitBook](https://brycki404.gitbook.io/fluxa/api-reference/blendtree).

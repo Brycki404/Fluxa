@@ -4,6 +4,8 @@ Module path: `Fluxa.FluxaBindingCatalog`
 
 `FluxaBindingCatalog` is a data container for modular animation bindings. It stores:
 
+> Note: Binding resolution is independent of playback. All playback and stepping is managed globally by `FluxaService` on the client.
+
 * binding sources
 * fallback chains
 * initial track bindings

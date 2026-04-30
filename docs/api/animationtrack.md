@@ -107,7 +107,7 @@ Also fires:
 * `KeyframeReached` and per-marker signals for any `AnimationEvent` whose time falls in the `(previousTime, currentTime]` window
 * `Stopped` and `Ended` on natural non-looping completion
 
-When using `FluxaController`, `Update` is called internally by `controller:Step`. When using the raw API, you call `Update` yourself in `RunService.RenderStepped`.
+When using `FluxaController`, `Update` is called internally by `controller:Step`, which is now managed globally by `FluxaService` on the client. You do not need to call `Update` or `Step` manually unless using the raw API.
 
 #### `track:AdjustSpeed(speed)`
 

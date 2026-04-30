@@ -11,7 +11,7 @@ local FluxaSettings = require(script.Parent.FluxaSettings)
 
 -- Type Imports
 type NPCEntry = FluxaTypes.NPCEntry
-type ControllerLike = FluxaTypes.ControllerLike
+type ControllerInstance = FluxaTypes.ControllerInstance
 type AnimTargetType = FluxaTypes.AnimTargetType
 type ResolvedAnimTarget = FluxaTypes.ResolvedAnimTarget
 type PlayOptions = FluxaTypes.PlayOptions
@@ -83,7 +83,7 @@ local function disconnectCleanup(id: any)
 	end
 end
 
-local function getControllerCharacter(controller: ControllerLike): Model?
+local function getControllerCharacter(controller: ControllerInstance): Model?
 	local character = controller.Character
 	if character ~= nil and character:IsA("Model") then
 		return character
@@ -116,7 +116,7 @@ local function resolveAnimTarget(target: any): ResolvedAnimTarget
 	error("FluxaService: animation target must be a Player, Model, or string id")
 end
 
-local function getControllerForTarget(targetType: AnimTargetType, targetValue: any): ControllerLike?
+local function getControllerForTarget(targetType: AnimTargetType, targetValue: any): ControllerInstance?
 	if targetType == "character" then
 		local character = targetValue
 		if typeof(character) == "Instance" and character:IsA("Model") then
@@ -190,7 +190,7 @@ local function shouldReplicateNpcToPlayer(entry: NPCEntry, player: Player, npcId
 	return (npcRoot.Position - playerRoot.Position).Magnitude <= radius
 end
 
-function FluxaService.RegisterController(id: any, controller: ControllerLike)
+function FluxaService.RegisterController(id: any, controller: ControllerInstance)
 	assert(id ~= nil, "FluxaService.RegisterController: id cannot be nil")
 	assert(controller ~= nil, "FluxaService.RegisterController: controller cannot be nil")
 
@@ -258,15 +258,15 @@ function FluxaService.UnregisterController(id: any)
 	FluxaService.Unregistered:Fire(id, controller)
 end
 
-function FluxaService.GetController(id: any): ControllerLike?
+function FluxaService.GetController(id: any): ControllerInstance?
 	return _registry[id]
 end
 
-function FluxaService.Get(id: any): ControllerLike?
+function FluxaService.Get(id: any): ControllerInstance?
 	return FluxaService.GetController(id)
 end
 
-function FluxaService.GetAllControllers(): {[any]: ControllerLike}
+function FluxaService.GetAllControllers(): {[any]: ControllerInstance}
 	local result = {}
 	for id, controller in pairs(_registry) do
 		if controller ~= nil then
@@ -276,11 +276,11 @@ function FluxaService.GetAllControllers(): {[any]: ControllerLike}
 	return result
 end
 
-function FluxaService.GetAll(): {[any]: ControllerLike}
+function FluxaService.GetAll(): {[any]: ControllerInstance}
 	return FluxaService.GetAllControllers()
 end
 
-function FluxaService.GetControllerByCharacter(character: Model): ControllerLike?
+function FluxaService.GetControllerByCharacter(character: Model): ControllerInstance?
 	local direct = _characterRegistry[character]
 	if direct ~= nil then
 		return direct
@@ -429,7 +429,7 @@ local function normalizeNPCOptions(characterOrOptions: Model | NPCReplicationOpt
 	return characterOrOptions or options or {}
 end
 
-function FluxaService.StartNPCReplication(id: string, controller: ControllerLike, characterOrOptions: Model | NPCReplicationOptions?, options: NPCReplicationOptions?)
+function FluxaService.StartNPCReplication(id: string, controller: ControllerInstance, characterOrOptions: Model | NPCReplicationOptions?, options: NPCReplicationOptions?)
 	assert(IS_SERVER, "FluxaService.StartNPCReplication must be called from the server")
 	assert(type(id) == "string" and id ~= "", "FluxaService.StartNPCReplication: id must be a non-empty string")
 	assert(controller ~= nil, "FluxaService.StartNPCReplication: controller cannot be nil")
@@ -675,6 +675,81 @@ if IS_SERVER then
 			end
 		end
 	end)
+
+	
 end
+
+
+if IS_CLIENT then
+	local _bound = false
+	local function stepAllControllers(dt)
+		-- Gather all controllers and sort by priority:
+		-- 1. LocalPlayer
+		-- 2. ReplicatedPlayers
+		-- 3. NPCs
+		-- 4. LocalOnly animations
+		local stepped = {}
+		local LocalPlayer = game:GetService("Players").LocalPlayer
+
+		-- Helper to classify controller type
+		local function getPriority(controller, id)
+			-- LocalPlayer controller
+			if controller.Character and LocalPlayer and controller.Character == LocalPlayer.Character then
+				return 1
+			end
+			-- ReplicatedPlayer (any Player except LocalPlayer)
+			if controller.Character and controller.Character:IsA("Model") then
+				local humanoid = controller.Character:FindFirstChildOfClass("Humanoid")
+				if humanoid and humanoid.Parent then
+					local player = game:GetService("Players"):GetPlayerFromCharacter(controller.Character)
+					if player and player ~= LocalPlayer then
+						return 2
+					end
+				end
+			end
+			-- NPC (registered in _npcEntries)
+			if _npcEntries[id] ~= nil then
+				return 3
+			end
+			-- LocalOnly (not a player, not an NPC)
+			return 4
+		end
+
+		for id, controller in pairs(_registry) do
+			if controller and controller.Step then
+				table.insert(stepped, {priority = getPriority(controller, id), controller = controller})
+			end
+		end
+
+		table.sort(stepped, function(a, b)
+			return a.priority < b.priority
+		end)
+
+		for _, entry in ipairs(stepped) do
+			entry.controller:Step(dt)
+		end
+	end
+
+	function FluxaService.Start()
+		if not _bound then
+			_bound = true
+			RunService:BindToRenderStep(
+				"FluxaUpdate",
+				Enum.RenderPriority.First.Value, -- Adjust as needed
+				stepAllControllers
+			)
+		end
+	end
+
+	function FluxaService.StopLoop()
+		if _bound then
+			_bound = false
+			pcall(function()
+				RunService:UnbindFromRenderStep("FluxaUpdate")
+			end)
+		end
+	end
+end
+
 
 return FluxaService

@@ -4,6 +4,8 @@ Module path: `Fluxa.FluxaBindingSetManager`
 
 `FluxaBindingSetManager` is the high-level helper that connects binding catalogs, asset loading, and controllers.
 
+> Note: Binding set application is independent of playback. All playback and stepping is managed globally by `FluxaService` on the client.
+
 It is responsible for:
 
 * source registration
