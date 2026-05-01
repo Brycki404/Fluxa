@@ -15,7 +15,9 @@ local ReplicationService = {}
 
 local _remoteEvent = nil
 local _localController = nil
+local _lastSentPacket = nil -- For delta compression
 local _remoteControllers = {}
+local _controllerOwners = setmetatable({}, {__mode = "k"}) -- controller -> player
 local _sendConnection = nil
 local _clientConnection = nil
 local _serverConnection = nil
@@ -128,16 +130,54 @@ local function ensureClientReceiver()
 	end)
 end
 
+-- Per-sender-per-target accumulator
+local _playerSendAccumulators = {} -- [sender][target] = {accum = 0, lastRate = 10}
+
+local function getPlayerRoot(player)
+	local char = player and player.Character
+	return char and char:FindFirstChild("HumanoidRootPart")
+end
+
+local function getLODHz(distance)
+	for _, tier in ipairs(FluxaSettings.Get("LOD_TIERS", {})) do
+		if distance <= tier.dist then
+			return tier.rate
+		end
+	end
+	return 1
+end
+
 local function ensureServerReceiver()
 	if not RunService:IsServer() or _serverConnection then
 		return
 	end
 
 	local remoteEvent = ensureRemoteEvent()
-	_serverConnection = remoteEvent.OnServerEvent:Connect(function(player, packet)
-		ReplicationService.ReceiveRemotePacket(player, packet)
+	_serverConnection = remoteEvent.OnServerEvent:Connect(function(sender, packet)
+		-- LOD: send to each other player at their own rate
+		for _, target in ipairs(Players:GetPlayers()) do
+			if target ~= sender then
+				local senderRoot = getPlayerRoot(sender)
+				local targetRoot = getPlayerRoot(target)
+				local dist = math.huge
+				if senderRoot and targetRoot and senderRoot:IsA("BasePart") and targetRoot:IsA("BasePart") then
+					dist = (senderRoot.Position - targetRoot.Position).Magnitude
+				end
+				local rate = getLODHz(dist)
+				_playerSendAccumulators[sender] = _playerSendAccumulators[sender] or {}
+				local acc = _playerSendAccumulators[sender][target] or {accum = 0, lastRate = rate}
+				acc.accum = acc.accum + RunService.Heartbeat:Wait()
+				acc.lastRate = rate
+				if acc.accum >= (1 / rate) then
+					acc.accum = 0
+					remoteEvent:FireClient(target, sender, packet)
+				end
+				_playerSendAccumulators[sender][target] = acc
+			end
+		end
 	end)
 end
+
 
 function ReplicationService.StartLocalReplication(controller, replicationMode: ReplicationMode?)
 	if controller == nil then
@@ -151,22 +191,10 @@ function ReplicationService.StartLocalReplication(controller, replicationMode: R
 	local mode = replicationMode or (controller.GetReplicationMode and controller:GetReplicationMode()) or controller._replicationMode or FluxaTypes.ReplicationMode.ClientOwned
 	controller._replicationMode = mode
 
-	-- ReplicationMode logic
-	if mode == FluxaTypes.ReplicationMode.LocalOnly then
-		-- No replication, just run locally
+	-- Only replicate if this controller is owned by the local player
+	if mode ~= FluxaTypes.ReplicationMode.ClientOwned or (Players.LocalPlayer and controller.Character and controller.Character ~= Players.LocalPlayer.Character) then
+		-- Disable sending for non-owned controllers
 		return
-	elseif mode == FluxaTypes.ReplicationMode.ServerOwned then
-		-- If on client, do not replicate to server
-		if RunService:IsClient() then
-			return
-		end
-		-- If on server, continue to replicate to clients
-	elseif mode == FluxaTypes.ReplicationMode.ClientOwned then
-		-- Only the owning client should replicate to the server
-		-- (On server, do not send updates; on client, allow replication)
-		if RunService:IsServer() then
-			return
-		end
 	end
 
 	if _sendConnection then
@@ -203,8 +231,6 @@ function ReplicationService.StartLocalReplication(controller, replicationMode: R
 			animationStartAccumulator = 0
 		end
 
-		-- Include bindings whenever they're dirty or at least once every
-		-- TRACK_BINDINGS_SYNC_INTERVAL seconds so peers heal from dropped packets.
 		local bindingsDirty = false
 		if _localController ~= nil and _localController.IsTrackBindingsDirty ~= nil then
 			bindingsDirty = _localController:IsTrackBindingsDirty() == true
@@ -216,9 +242,34 @@ function ReplicationService.StartLocalReplication(controller, replicationMode: R
 
 		local packet = buildLocalPacket(includeAnimationStartTimes, includeTrackBindings)
 		if packet then
-			remoteEvent:FireServer(packet)
-			if includeTrackBindings and _localController ~= nil and _localController.MarkTrackBindingsSent ~= nil then
-				_localController:MarkTrackBindingsSent()
+			-- Delta compression: only send if changed
+			local function shallowEqual(a, b)
+				if a == b then return true end
+				if type(a) ~= "table" or type(b) ~= "table" then return false end
+				for k, v in pairs(a) do if b[k] ~= v then return false end end
+				for k, v in pairs(b) do if a[k] ~= v then return false end end
+				return true
+			end
+
+			local changed = false
+			if not _lastSentPacket then
+				changed = true
+			else
+				-- Only compare top-level fields for now (can be deepened if needed)
+				for k, v in pairs(packet) do
+					if not shallowEqual(v, _lastSentPacket[k]) then
+						changed = true
+						break
+					end
+				end
+			end
+
+			if changed then
+				remoteEvent:FireServer(packet)
+				_lastSentPacket = packet
+				if includeTrackBindings and _localController ~= nil and _localController.MarkTrackBindingsSent ~= nil then
+					_localController:MarkTrackBindingsSent()
+				end
 			end
 		end
 	end)
@@ -244,8 +295,8 @@ function ReplicationService.StartRemoteReplication(controller, player)
 	if controller == nil or player == nil then
 		return
 	end
-
 	_remoteControllers[player] = controller
+	_controllerOwners[controller] = player
 
 	if RunService:IsClient() then
 		ensureClientReceiver()

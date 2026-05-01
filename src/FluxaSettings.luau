@@ -17,16 +17,19 @@ Settings.DEFAULT_PLAY_RATE_LIMIT_WINDOW = 0.05
 
 -- Fluxa Replication Service settings
 Settings.REMOTE_EVENT_NAME = "FluxaReplication"
-Settings.SEND_RATE_HZ = 30
+-- LOD send rates (Hz) by distance (studs)
+Settings.LOD_TIERS = {
+	{ dist = 20, rate = 20 },   -- 0-20 studs: 20 Hz
+	{ dist = 50, rate = 10 },   -- 20-50 studs: 10 Hz
+	{ dist = 100, rate = 3 },   -- 50-100 studs: 3 Hz
+	{ dist = math.huge, rate = 1 }, -- >100 studs: 1 Hz
+}
 Settings.ANIMATION_START_TIMES_INTERVAL = 0.25
 -- TrackBindings change rarely (weapon/stance swap) but add bandwidth if sent
 -- every packet.  We delta-replicate: include whenever the controller reports
 -- its bindings as dirty, and also on a slow heartbeat so late-joining peers
 -- recover within ~1s even if they miss the dirty packet.
 Settings.TRACK_BINDINGS_SYNC_INTERVAL = 1.0
-
-Settings.SIGNAL_BEHAVIOR = Enum.SignalBehavior.Default
-
 -- Add more shared settings here as needed
 
 

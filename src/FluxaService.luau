@@ -366,6 +366,24 @@ local function notifyPlayersAboutNpc(eventName: "added" | "removed", npcId: stri
 	end
 end
 
+local _npcPlayerSendAccumulators = {} -- [npcId][player] = {accum = 0, lastRate = 10}
+local function getPlayerRoot(player)
+	local char = player and player.Character
+	return char and char:FindFirstChild("HumanoidRootPart")
+end
+local function getNPCRoot(entry)
+	local char = entry.Character
+	return char and char:FindFirstChild("HumanoidRootPart")
+end
+local function getLODHz(distance)
+	for _, tier in ipairs(FluxaSettings.Get("LOD_TIERS", {})) do
+		if distance <= tier.dist then
+			return tier.rate
+		end
+	end
+	return 1
+end
+
 local function tickNPCReplication(dt: number)
 	local remote = findRemote(FluxaSettings.Get("NPC_REPLICATION_REMOTE", "FluxaService_NPCReplication"))
 	if remote == nil then
@@ -376,10 +394,7 @@ local function tickNPCReplication(dt: number)
 		entry.SendAccumulator += dt
 		entry.StartTimeAccumulator += dt
 
-		if entry.SendAccumulator < (1 / FluxaSettings.Get("NPC_SEND_RATE_HZ", 20)) then
-			continue
-		end
-		entry.SendAccumulator = 0
+		-- Remove global send rate check; handled per-player below
 
 		local controller = entry.Controller
 		local getReplicationPacket = if controller ~= nil then controller.GetReplicationPacket else nil
@@ -404,14 +419,24 @@ local function tickNPCReplication(dt: number)
 			entry.StartTimeAccumulator = 0
 		end
 
-		local sentToAll = entry.RelevanceRadius == nil and entry.ShouldReplicateToPlayer == nil
-		if sentToAll then
-			remote:FireAllClients(envelope)
-		else
-			for _, player in ipairs(Players:GetPlayers()) do
-				if shouldReplicateNpcToPlayer(entry, player, npcId) then
+		for _, player in ipairs(Players:GetPlayers()) do
+			if shouldReplicateNpcToPlayer(entry, player, npcId) then
+				local npcRoot = getNPCRoot(entry)
+				local playerRoot = getPlayerRoot(player)
+				local dist = math.huge
+				if npcRoot and playerRoot and npcRoot:IsA("BasePart") and playerRoot:IsA("BasePart") then
+					dist = (npcRoot.Position - playerRoot.Position).Magnitude
+				end
+				local rate = getLODHz(dist)
+				_npcPlayerSendAccumulators[npcId] = _npcPlayerSendAccumulators[npcId] or {}
+				local acc = _npcPlayerSendAccumulators[npcId][player] or {accum = 0, lastRate = rate}
+				acc.accum = acc.accum + dt
+				acc.lastRate = rate
+				if acc.accum >= (1 / rate) then
+					acc.accum = 0
 					remote:FireClient(player, envelope)
 				end
+				_npcPlayerSendAccumulators[npcId][player] = acc
 			end
 		end
 	end

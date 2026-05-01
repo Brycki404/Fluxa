@@ -470,10 +470,17 @@ end
 
 local function createCameraDriver(controller, connectFn)
 	local register = connectFn or connect
+	-- Throttle packet sending to 10 Hz and only on significant change
+	local lastSend = 0
+	local lastPitch = nil
+	local lastYawRel = nil
+	local SEND_INTERVAL = 0.1 -- 10 Hz
+	local PITCH_EPSILON = 0.01
+	local YAW_EPSILON = 0.01
 	return register(RunService.RenderStepped, function()
+		local now = os.clock()
 		local look = Workspace.CurrentCamera and Workspace.CurrentCamera.CFrame.LookVector or Vector3.new(0, 0, -1)
 		controller:SetLayerDriver("UpperBody", "AimPitchInput", look.Y)
-		-- Always update global drivers for camera aiming (never nil)
 		local camera = Workspace.CurrentCamera
 		local character = controller.Character
 		if camera and character then
@@ -494,9 +501,15 @@ local function createCameraDriver(controller, connectFn)
 			end
 			controller:SetGlobalDriver("LookCamPitch", camPitch)
 			controller:SetGlobalDriver("LookCamYawRel", camYawRel)
-			-- Debug print for camera driver update
-			-- print("[Fluxa][DEBUG] Updated global drivers: LookCamPitch=", camPitch, "LookCamYawRel=", camYawRel)
-			FluxaReplicationService.SendLocalPacket()
+			-- Only send if changed enough or enough time has passed
+			local pitchChanged = not lastPitch or math.abs(camPitch - lastPitch) > PITCH_EPSILON
+			local yawChanged = not lastYawRel or math.abs(camYawRel - lastYawRel) > YAW_EPSILON
+			if (pitchChanged or yawChanged) and (now - lastSend > SEND_INTERVAL) then
+				-- FluxaReplicationService.SendLocalPacket()
+				lastSend = now
+				lastPitch = camPitch
+				lastYawRel = camYawRel
+			end
 		end
 	end)
 end
@@ -899,13 +912,13 @@ local function createFluxaController(character: Model, bindingSetManager, isLoca
 	end)
 
 	-- Disable replication for velocity-based drivers on local player
-	controller:SetLayerDriverReplication("Base", "Moving", false)
-	controller:SetLayerDriverReplication("Base", "SmoothedPlanarSpeed", false)
-	controller:SetLayerDriverReplication("Base", "Speed", false)
-	controller:SetLayerDriverReplication("Base", "LastYaw", false)
-	controller:SetLayerDriverReplication("Base", "TurnLean", false)
-	controller:SetLayerDriverReplication("Base", "WasAirborne", false)
-	controller:SetLayerDriverReplication("Base", "LastLandTriggerTime", false)
+	-- controller:SetLayerDriverReplication("Base", "Moving", false)
+	-- controller:SetLayerDriverReplication("Base", "SmoothedPlanarSpeed", false)
+	-- controller:SetLayerDriverReplication("Base", "Speed", false)
+	-- controller:SetLayerDriverReplication("Base", "LastYaw", false)
+	-- controller:SetLayerDriverReplication("Base", "TurnLean", false)
+	-- controller:SetLayerDriverReplication("Base", "WasAirborne", false)
+	-- controller:SetLayerDriverReplication("Base", "LastLandTriggerTime", false)
 
 	return controller
 end

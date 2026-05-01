@@ -627,8 +627,9 @@ function FluxaController.ApplyReplicationPacket(self: ControllerInstance, packet
 		return
 	end
 
+	local incomingBindings = {}
 	if type(packet.TrackBindings) == "table" then
-		local incomingBindings = packet.TrackBindings :: {[string]: string}
+		incomingBindings = packet.TrackBindings :: {[string]: string}
 
 		-- An empty incoming map is almost always a transient sender state
 		-- (e.g. a controller that's mid-rebuild during a respawn). Treat it
