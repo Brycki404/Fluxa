@@ -154,7 +154,7 @@ local function ensureServerReceiver()
 
 	local remoteEvent = ensureRemoteEvent()
 	_serverConnection = remoteEvent.OnServerEvent:Connect(function(sender, packet)
-		-- LOD: send to each other player at their own rate
+		-- LOD: send to each other player at their own rate, but never back to sender
 		for _, target in ipairs(Players:GetPlayers()) do
 			if target ~= sender then
 				local senderRoot = getPlayerRoot(sender)
@@ -170,7 +170,10 @@ local function ensureServerReceiver()
 				acc.lastRate = rate
 				if acc.accum >= (1 / rate) then
 					acc.accum = 0
-					remoteEvent:FireClient(target, sender, packet)
+					-- Do not send back to sender
+					if target ~= sender then
+						remoteEvent:FireClient(target, sender, packet)
+					end
 				end
 				_playerSendAccumulators[sender][target] = acc
 			end
