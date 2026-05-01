@@ -63,6 +63,8 @@ module.OwnsCharacterLifecycle = true
 function module:SetLocalReplicationEnabled(enabled: boolean)
 	_localControllerReplicationEnabled = enabled == true
 	FluxaReplicationService.SetLocalReplicationEnabled(_localControllerReplicationEnabled)
+	-- Debug print for replication enabled/disabled
+	print("[Fluxa][DEBUG] Local replication enabled:", _localControllerReplicationEnabled)
 end
 
 -- Utility: Create or get LookTarget attachment under Humanoid
@@ -249,7 +251,7 @@ local function createMovementDriver(controller, humanoid, root, connectFn)
 		local targetLean = 0
 		if isMoving then
 			local speedAlpha = math.clamp(smoothedPlanarSpeed / MAX_RUN_SPEED, 0, 1)
-			local momentumAlpha = if shiftHeld then 0 else momentum
+			local momentumAlpha = momentum
 			local leanScale = math.clamp((MIN_LEAN_SCALE + momentumAlpha) * speedAlpha, 0, 1)
 			targetLean = math.clamp(-turnRate * TURN_LEAN_SENSITIVITY * leanScale, -maxLean, maxLean)
 		end
@@ -265,6 +267,61 @@ local function createMovementDriver(controller, humanoid, root, connectFn)
 		setBaseBlend(controller, "SmoothedPlanarSpeed", smoothedPlanarSpeed)
 		setBaseBlend(controller, "LastYaw", lastYaw)
 	end)
+end
+
+-- Movement driver for MoveTo-based NPCs (uses velocity, not MoveDirection)
+local function createNPCMovementDriver(controller, root, connectFn, isRemotePlayer)
+    local register = connectFn or connect
+    return register(RunService.RenderStepped, function(dt)
+        local vel = root.AssemblyLinearVelocity
+        local planarVel = Vector3.new(vel.X, 0, vel.Z)
+        local planarSpeed = planarVel.Magnitude
+        local isMoving = planarSpeed > 0.1
+        local smoothedPlanarSpeed = getBaseBlend(controller, "SmoothedPlanarSpeed", 0)
+        local lastYaw = getBaseBlend(controller, "LastYaw", getYaw(root.CFrame))
+        local momentum = getBaseBlend(controller, "Momentum", 0)
+        local airState = getBaseState(controller)
+        local turnLean = getBaseBlend(controller, "TurnLean", 0)
+
+        smoothedPlanarSpeed += (planarSpeed - smoothedPlanarSpeed) * math.clamp(dt * SPEED_SMOOTH_SPEED, 0, 1)
+
+        local moveDir = if planarSpeed > 0 then planarVel.Unit else Vector3.zero
+        local currentYaw = getYaw(root.CFrame)
+        local yawDelta = deltaAngle(currentYaw, lastYaw)
+        local turnRate = if dt > 0 then yawDelta / dt else 0
+        lastYaw = currentYaw
+
+        if isMoving and not isRemotePlayer then
+            local targetCFrame = CFrame.lookAt(root.Position, root.Position + moveDir)
+            root.CFrame = root.CFrame:Lerp(targetCFrame, math.clamp(dt * 10, 0, 1))
+        end
+
+        if not isMoving then
+            momentum = 0
+        elseif airState == "Ground" then
+            momentum = math.min(1, momentum + MOMENTUM_BUILD_RATE * dt)
+        else
+            momentum = math.max(0, momentum - MOMENTUM_DECAY_RATE * dt)
+        end
+
+        local maxLean = math.rad(MAX_TURN_LEAN_DEG)
+        local targetLean = 0
+        if isMoving then
+            local speedAlpha = math.clamp(smoothedPlanarSpeed / MAX_RUN_SPEED, 0, 1)
+            local momentumAlpha = momentum
+            local leanScale = math.clamp((MIN_LEAN_SCALE + momentumAlpha) * speedAlpha, 0, 1)
+            targetLean = math.clamp(-turnRate * TURN_LEAN_SENSITIVITY * leanScale, -maxLean, maxLean)
+        end
+        turnLean = turnLean + (targetLean - turnLean) * math.clamp(dt * TURN_LEAN_SMOOTH_SPEED, 0, 1)
+
+        setBaseBlend(controller, "Speed", planarSpeed)
+        setBaseBlend(controller, "Direction", moveDir)
+        setBaseBlend(controller, "Moving", isMoving)
+        setBaseBlend(controller, "Momentum", momentum)
+        setBaseBlend(controller, "TurnLean", turnLean)
+        setBaseBlend(controller, "SmoothedPlanarSpeed", smoothedPlanarSpeed)
+        setBaseBlend(controller, "LastYaw", lastYaw)
+    end)
 end
 
 local function createHumanoidStateDriver(controller, humanoid, flushPacket, connectFn)
@@ -333,6 +390,68 @@ local function createHumanoidStateDriver(controller, humanoid, flushPacket, conn
 	end)
 end
 
+-- Custom state driver for client-only NPCs (does not rely on Humanoid.StateChanged)
+local function createNPCStateDriver(controller, humanoid, root, connectFn)
+	local register = connectFn or connect
+	local lastAirState = "Ground"
+	local wasAirborne = false
+	local lastLandTriggerTime = -math.huge
+	register(RunService.RenderStepped, function(dt)
+		local vel = root.AssemblyLinearVelocity
+		local planarSpeed = Vector3.new(vel.X, 0, vel.Z).Magnitude
+		local grounded = humanoid:GetState() ~= Enum.HumanoidStateType.Freefall and humanoid.FloorMaterial ~= Enum.Material.Air
+		local climbing = humanoid:GetState() == Enum.HumanoidStateType.Climbing
+		local jumping = humanoid:GetState() == Enum.HumanoidStateType.Jumping
+		local now = os.clock()
+		local airState = getBaseState(controller)
+
+		if climbing then
+			airState = setBaseState(controller, "Climb")
+			wasAirborne = false
+			controller:MarkLayerAnimationStart("Base", "Climb")
+			controller:Play("Climb")
+			controller:Stop("Fall", 0.2)
+			controller:Stop("Jump", 0.2)
+			controller:Stop("Land", 0.2)
+		elseif not grounded then
+			if not wasAirborne then
+				wasAirborne = true
+				airState = setBaseState(controller, "Fall")
+				controller:MarkLayerAnimationStart("Base", "Fall")
+				controller:Play("Fall")
+				controller:Stop("Jump", 0.2)
+				controller:Stop("Land", 0.2)
+				controller:Stop("Climb", 0.2)
+			end
+		elseif jumping then
+			wasAirborne = true
+			airState = setBaseState(controller, "Jump")
+			controller:MarkLayerAnimationStart("Base", "Jump")
+			controller:Play("Jump")
+			controller:Stop("Land", 0.2)
+			controller:Stop("Fall", 0.2)
+			controller:Stop("Climb", 0.2)
+		else
+			if wasAirborne then
+				local canTriggerLand = (now - lastLandTriggerTime) >= LAND_RETRIGGER_COOLDOWN
+				if canTriggerLand then
+					airState = setBaseState(controller, "Ground")
+					wasAirborne = false
+					lastLandTriggerTime = now
+					controller:MarkLayerAnimationStart("Landing", "Land")
+					controller:Play("Land")
+				else
+					airState = setBaseState(controller, "Ground")
+					wasAirborne = false
+				end
+			elseif airState ~= "Jump" and airState ~= "Fall" then
+				airState = setBaseState(controller, "Ground")
+				wasAirborne = false
+			end
+		end
+	end)
+end
+
 local function createCombatDriver(controller, connectFn)
 	local register = connectFn or connect
 	return register(UserInputService.InputBegan, function(input, gameProcessed)
@@ -354,6 +473,31 @@ local function createCameraDriver(controller, connectFn)
 	return register(RunService.RenderStepped, function()
 		local look = Workspace.CurrentCamera and Workspace.CurrentCamera.CFrame.LookVector or Vector3.new(0, 0, -1)
 		controller:SetLayerDriver("UpperBody", "AimPitchInput", look.Y)
+		-- Always update global drivers for camera aiming (never nil)
+		local camera = Workspace.CurrentCamera
+		local character = controller.Character
+		if camera and character then
+			local camCFrame = camera.CFrame
+			local rootPart = character:FindFirstChild("HumanoidRootPart")
+			local camYawRel = 0
+			local camPitch = 0
+			if rootPart then
+				local charLook = rootPart.CFrame.LookVector
+				local camLookLocal = rootPart.CFrame:VectorToObjectSpace(camCFrame.LookVector)
+				if charLook:Dot(camCFrame.LookVector) < 0 then
+					camLookLocal = Vector3.new(camLookLocal.X, camLookLocal.Y, -camLookLocal.Z)
+				end
+				camYawRel = math.atan2(-camLookLocal.X, -camLookLocal.Z)
+				camPitch = math.asin(camLookLocal.Y)
+				if camYawRel > math.pi then camYawRel = camYawRel - 2 * math.pi end
+				if camYawRel < -math.pi then camYawRel = camYawRel + 2 * math.pi end
+			end
+			controller:SetGlobalDriver("LookCamPitch", camPitch)
+			controller:SetGlobalDriver("LookCamYawRel", camYawRel)
+			-- Debug print for camera driver update
+			-- print("[Fluxa][DEBUG] Updated global drivers: LookCamPitch=", camPitch, "LookCamYawRel=", camYawRel)
+			FluxaReplicationService.SendLocalPacket()
+		end
 	end)
 end
 
@@ -376,7 +520,7 @@ local function disableBuiltInCharacterAnimation(character: Model)
 	end
 end
 
-local function createFluxaController(character: Model, bindingSetManager, isLocalController: boolean)
+local function createFluxaController(character: Model, bindingSetManager, isLocalController: boolean?, isNPCController: boolean?)
 	local upperBodyMask = {
 		"UpperTorso",
 		"Torso",
@@ -411,11 +555,13 @@ local function createFluxaController(character: Model, bindingSetManager, isLoca
 		Attack = { Layer = "UpperBody", AutoManage = false, AutoReplicate = true, InitialWeight = 1, ReplicationSeekMode = "Never",  TrackOptions = { Looped = false, Speed = 1, FadeInTime = 0.08, FadeOutTime = 0.14 } },
 	}
 
+	-- NPC controllers are serverowned, so we don't need to replicate them here
 	local controller = FluxaController.new({
 		Character = character,
 		AutoApplyPose = true,
-		ReplicationSeekMode = "LoopingOnly",
-		ReplicateTrackBindings = true,
+		ReplicationSeekMode = isNPCController and "Never" or "LoopingOnly",
+		ReplicateTrackBindings = isNPCController ~= true,
+		ReplicationMode = isNPCController and "LocalOnly" or "ClientOwned",
 		OnPreStep = function(innerController, dt)
 			local currentBaseState = getBaseState(innerController)
 			local smoothedPlanarSpeed = getLayerBlend(innerController, "Base", "SmoothedPlanarSpeed", 0)
@@ -453,46 +599,48 @@ local function createFluxaController(character: Model, bindingSetManager, isLoca
 			landingWeightSmoothed += (landingWeight - landingWeightSmoothed) * math.clamp(dt * LAND_LAYER_WEIGHT_SMOOTH_SPEED, 0, 1)
 			innerController:SetLayerWeight("Landing", landingWeightSmoothed)
 
-			if isLocalController then
-				local rawAimPitch = math.clamp(getLayerBlend(innerController, "UpperBody", "AimPitchInput", 0), -1, 1)
-				smoothedAimPitch += (rawAimPitch - smoothedAimPitch) * math.clamp(dt * AIM_PITCH_SMOOTH_SPEED, 0, 1)
+			if not isNPCController then
+				if isLocalController then
+					local rawAimPitch = math.clamp(getLayerBlend(innerController, "UpperBody", "AimPitchInput", 0), -1, 1)
+					smoothedAimPitch += (rawAimPitch - smoothedAimPitch) * math.clamp(dt * AIM_PITCH_SMOOTH_SPEED, 0, 1)
 
-				local isAttackPlaying = attackTrack and attackTrack.IsPlaying
-				local targetInfluence = 0
-				if isAttackPlaying then
-					local trackWeight = math.clamp(attackTrack.Weight, 0, 1)
-					if trackWeight <= 0 and attackPoseInfluence <= 0 then
-						targetInfluence = math.max(targetInfluence, math.min(1, dt * AIM_PITCH_RISE_SPEED))
+					local isAttackPlaying = attackTrack and attackTrack.IsPlaying
+					local targetInfluence = 0
+					if isAttackPlaying then
+						local trackWeight = math.clamp(attackTrack.Weight, 0, 1)
+						if trackWeight <= 0 and attackPoseInfluence <= 0 then
+							targetInfluence = math.max(targetInfluence, math.min(1, dt * AIM_PITCH_RISE_SPEED))
+						end
+						targetInfluence = math.max(targetInfluence, trackWeight)
 					end
-					targetInfluence = math.max(targetInfluence, trackWeight)
+
+					if targetInfluence > attackPoseInfluence then
+						attackPoseInfluence = math.min(targetInfluence, attackPoseInfluence + dt * AIM_PITCH_RISE_SPEED)
+					else
+						attackPoseInfluence = math.max(targetInfluence, attackPoseInfluence - dt * AIM_PITCH_FADE_SPEED)
+					end
+
+					if isAttackPlaying then
+						innerController:SetLayerDriver("UpperBody", "State", "Attack")
+					else
+						innerController:SetLayerDriver("UpperBody", "State", "Idle")
+					end
+					innerController:SetLayerDriver("UpperBody", "AttackInfluence", attackPoseInfluence)
+					innerController:SetLayerDriver("UpperBody", "AimPitch", smoothedAimPitch)
+				else
+					local replicatedAimPitch = math.clamp(getLayerBlend(innerController, "UpperBody", "AimPitch", 0), -1, 1)
+					smoothedAimPitch += (replicatedAimPitch - smoothedAimPitch) * math.clamp(dt * AIM_PITCH_SMOOTH_SPEED, 0, 1)
+
+					local targetAttackInfluence = math.clamp(getLayerBlend(innerController, "UpperBody", "AttackInfluence", 0), 0, 1)
+					if targetAttackInfluence > attackPoseInfluence then
+						attackPoseInfluence = math.min(targetAttackInfluence, attackPoseInfluence + dt * AIM_PITCH_RISE_SPEED)
+					else
+						attackPoseInfluence = math.max(targetAttackInfluence, attackPoseInfluence - dt * AIM_PITCH_FADE_SPEED)
+					end
 				end
 
-				if targetInfluence > attackPoseInfluence then
-					attackPoseInfluence = math.min(targetInfluence, attackPoseInfluence + dt * AIM_PITCH_RISE_SPEED)
-				else
-					attackPoseInfluence = math.max(targetInfluence, attackPoseInfluence - dt * AIM_PITCH_FADE_SPEED)
-				end
-
-				if isAttackPlaying then
-					innerController:SetLayerDriver("UpperBody", "State", "Attack")
-				else
-					innerController:SetLayerDriver("UpperBody", "State", "Idle")
-				end
-				innerController:SetLayerDriver("UpperBody", "AttackInfluence", attackPoseInfluence)
-				innerController:SetLayerDriver("UpperBody", "AimPitch", smoothedAimPitch)
-			else
-				local replicatedAimPitch = math.clamp(getLayerBlend(innerController, "UpperBody", "AimPitch", 0), -1, 1)
-				smoothedAimPitch += (replicatedAimPitch - smoothedAimPitch) * math.clamp(dt * AIM_PITCH_SMOOTH_SPEED, 0, 1)
-
-				local targetAttackInfluence = math.clamp(getLayerBlend(innerController, "UpperBody", "AttackInfluence", 0), 0, 1)
-				if targetAttackInfluence > attackPoseInfluence then
-					attackPoseInfluence = math.min(targetAttackInfluence, attackPoseInfluence + dt * AIM_PITCH_RISE_SPEED)
-				else
-					attackPoseInfluence = math.max(targetAttackInfluence, attackPoseInfluence - dt * AIM_PITCH_FADE_SPEED)
-				end
+				innerController:SetLayerWeight("UpperBody", attackPoseInfluence)
 			end
-
-			innerController:SetLayerWeight("UpperBody", attackPoseInfluence)
 		end,
 		OnPostBlend = function(innerController, finalPose, dt)
 			local currentBaseState = getBaseState(innerController)
@@ -511,113 +659,133 @@ local function createFluxaController(character: Model, bindingSetManager, isLoca
 				end
 			end
 
-			-- Complementary weighting: AimPitch vs LookAt
-			local aimPitchWeight = attackPoseInfluence
-			local lookAtWeight = 1 - aimPitchWeight
+			if not isNPCController then
+				-- Complementary weighting: AimPitch vs LookAt
+				local aimPitchWeight = attackPoseInfluence
+				local lookAtWeight = 1 - aimPitchWeight
 
-			-- AimPitch effect (as before, but weighted)
-			if aimPitchWeight > 0 then
-				if finalPose.RightLowerArm then
-					finalPose.RightLowerArm = finalPose.RightLowerArm:Lerp(CFrame.identity, aimPitchWeight)
-				end
-				if finalPose.RightHand then
-					finalPose.RightHand = finalPose.RightHand:Lerp(CFrame.identity, aimPitchWeight)
-				end
-
-				local aimPitch = getLayerBlend(innerController, "UpperBody", "AimPitch", smoothedAimPitch)
-				local desiredPitch = math.clamp(math.rad(MAX_DELTA_AIM_PITCH_DEG) * aimPitch, math.rad(MIN_AIM_PITCH_DEG), math.rad(MAX_AIM_PITCH_DEG))
-				local pitchRadians = desiredPitch * aimPitchWeight
-				local pitchOffset = CFrame.Angles(pitchRadians, 0, 0)
-
-				if finalPose.UpperTorso then
-					if finalPose.LowerTorso then
-						local upperBase = finalPose.UpperTorso
-						local compensatedUpper = finalPose.LowerTorso.Rotation:Inverse() * upperBase
-						local compensationAlpha = math.clamp(aimPitchWeight * aimPitchWeight, 0, 1)
-						local blendedUpper = upperBase:Lerp(compensatedUpper, compensationAlpha)
-						finalPose.UpperTorso = blendedUpper * pitchOffset
-					else
-						finalPose.UpperTorso = finalPose.UpperTorso * pitchOffset
+				-- AimPitch effect (as before, but weighted)
+				if aimPitchWeight > 0 then
+					if finalPose.RightLowerArm then
+						finalPose.RightLowerArm = finalPose.RightLowerArm:Lerp(CFrame.identity, aimPitchWeight)
 					end
-				elseif finalPose.Torso then
-					finalPose.Torso = finalPose.Torso * pitchOffset
-				end
-			end
-
-			-- LookAt effect (complementary to AimPitch, replicated via GlobalDriver)
-			local isLocalPlayerCharacter = false
-			if Players and Players.LocalPlayer and innerController and innerController.Character then
-				isLocalPlayerCharacter = (Players.LocalPlayer.Character == innerController.Character)
-			end
-
-			-- Get the rest pose (original, unmodified pose) for Head and UpperTorso
-			local restPose = innerController.RestPose or {}
-
-			if lookAtWeight > 0 then
-				-- Smoothing state (persist across calls)
-				innerController._smoothedLookCamPitch = innerController._smoothedLookCamPitch or 0
-				innerController._smoothedLookCamYawRel = innerController._smoothedLookCamYawRel or 0
-				local SMOOTH_SPEED = 14 -- higher = snappier, lower = smoother
-				local function smoothAngle(current, target, dt)
-					-- Handles wraparound for angles
-					local delta = target - current
-					if delta > math.pi then delta = delta - 2 * math.pi end
-					if delta < -math.pi then delta = delta + 2 * math.pi end
-					return current + (delta * math.clamp(dt * SMOOTH_SPEED, 0, 1))
-				end
-				-- Exponential curve for yaw influence
-				local function yawInfluenceCurve(yaw)
-					-- Influence is 1 in the central region, drops to 0 in the last 40 degrees near perpendicular
-					local maxInfluenceAngle = math.rad(90)
-					local cutoff = math.rad(50) -- start reducing at 50deg
-					local absYaw = math.abs(yaw)
-					if absYaw >= maxInfluenceAngle then
-						return 0
-					elseif absYaw <= cutoff then
-						return 1
-					else
-						-- Smoothly drop from 1 to 0 between 50 and 90 degrees
-						local t = (absYaw - cutoff) / (maxInfluenceAngle - cutoff)
-						-- Use a smoothstep for a gentle curve
-						return 1 - (3*t^2 - 2*t^3)
+					if finalPose.RightHand then
+						finalPose.RightHand = finalPose.RightHand:Lerp(CFrame.identity, aimPitchWeight)
 					end
-				end
-				if isLocalPlayerCharacter then
-					local camera = Workspace.CurrentCamera
-					local character = innerController.Character
-					if camera and character then
-						local camCFrame = camera.CFrame
-						local rootPart = character:FindFirstChild("HumanoidRootPart")
-						local camYawRel = 0
-						local camPitch = 0
-						if rootPart then
-							local charLook = rootPart.CFrame.LookVector
-							-- Get camera look in rootPart's object space
-							local camLookLocal = rootPart.CFrame:VectorToObjectSpace(camCFrame.LookVector)
-							-- If facing opposite, flip only the Z axis
-							if charLook:Dot(camCFrame.LookVector) < 0 then
-								camLookLocal = Vector3.new(camLookLocal.X, camLookLocal.Y, -camLookLocal.Z)
-							end
-							-- Compute yaw and pitch from local camera look
-							camYawRel = math.atan2(-camLookLocal.X, -camLookLocal.Z)
-							camPitch = math.asin(camLookLocal.Y)
-							-- Normalize to [-pi, pi]
-							if camYawRel > math.pi then camYawRel = camYawRel - 2 * math.pi end
-							if camYawRel < -math.pi then camYawRel = camYawRel + 2 * math.pi end
+
+					local aimPitch = getLayerBlend(innerController, "UpperBody", "AimPitch", smoothedAimPitch)
+					local desiredPitch = math.clamp(math.rad(MAX_DELTA_AIM_PITCH_DEG) * aimPitch, math.rad(MIN_AIM_PITCH_DEG), math.rad(MAX_AIM_PITCH_DEG))
+					local pitchRadians = desiredPitch * aimPitchWeight
+					local pitchOffset = CFrame.Angles(pitchRadians, 0, 0)
+
+					if finalPose.UpperTorso then
+						if finalPose.LowerTorso then
+							local upperBase = finalPose.UpperTorso
+							local compensatedUpper = finalPose.LowerTorso.Rotation:Inverse() * upperBase
+							local compensationAlpha = math.clamp(aimPitchWeight * aimPitchWeight, 0, 1)
+							local blendedUpper = upperBase:Lerp(compensatedUpper, compensationAlpha)
+							finalPose.UpperTorso = blendedUpper * pitchOffset
+						else
+							finalPose.UpperTorso = finalPose.UpperTorso * pitchOffset
 						end
-						-- Smooth the pitch and yaw
+					elseif finalPose.Torso then
+						finalPose.Torso = finalPose.Torso * pitchOffset
+					end
+				end
+
+				-- LookAt effect (complementary to AimPitch, replicated via GlobalDriver)
+				local isLocalPlayerCharacter = false
+				if Players and Players.LocalPlayer and innerController and innerController.Character then
+					isLocalPlayerCharacter = (Players.LocalPlayer.Character == innerController.Character)
+				end
+
+				-- Get the rest pose (original, unmodified pose) for Head and UpperTorso
+				local restPose = innerController.RestPose or {}
+
+				if lookAtWeight > 0 then
+					-- Smoothing state (persist across calls)
+					innerController._smoothedLookCamPitch = innerController._smoothedLookCamPitch or 0
+					innerController._smoothedLookCamYawRel = innerController._smoothedLookCamYawRel or 0
+					local SMOOTH_SPEED = 14 -- higher = snappier, lower = smoother
+					local function smoothAngle(current, target, dt)
+						-- Handles wraparound for angles
+						local delta = target - current
+						if delta > math.pi then delta = delta - 2 * math.pi end
+						if delta < -math.pi then delta = delta + 2 * math.pi end
+						return current + (delta * math.clamp(dt * SMOOTH_SPEED, 0, 1))
+					end
+					-- Exponential curve for yaw influence
+					local function yawInfluenceCurve(yaw)
+						-- Influence is 1 in the central region, drops to 0 in the last 40 degrees near perpendicular
+						local maxInfluenceAngle = math.rad(90)
+						local cutoff = math.rad(50) -- start reducing at 50deg
+						local absYaw = math.abs(yaw)
+						if absYaw >= maxInfluenceAngle then
+							return 0
+						elseif absYaw <= cutoff then
+							return 1
+						else
+							-- Smoothly drop from 1 to 0 between 50 and 90 degrees
+							local t = (absYaw - cutoff) / (maxInfluenceAngle - cutoff)
+							-- Use a smoothstep for a gentle curve
+							return 1 - (3*t^2 - 2*t^3)
+						end
+					end
+					if isLocalPlayerCharacter then
+						local camera = Workspace.CurrentCamera
+						local character = innerController.Character
+						if camera and character then
+							local camCFrame = camera.CFrame
+							local rootPart = character:FindFirstChild("HumanoidRootPart")
+							local camYawRel = 0
+							local camPitch = 0
+							if rootPart then
+								local charLook = rootPart.CFrame.LookVector
+								-- Get camera look in rootPart's object space
+								local camLookLocal = rootPart.CFrame:VectorToObjectSpace(camCFrame.LookVector)
+								-- If facing opposite, flip only the Z axis
+								if charLook:Dot(camCFrame.LookVector) < 0 then
+									camLookLocal = Vector3.new(camLookLocal.X, camLookLocal.Y, -camLookLocal.Z)
+								end
+								-- Compute yaw and pitch from local camera look
+								camYawRel = math.atan2(-camLookLocal.X, -camLookLocal.Z)
+								camPitch = math.asin(camLookLocal.Y)
+								-- Normalize to [-pi, pi]
+								if camYawRel > math.pi then camYawRel = camYawRel - 2 * math.pi end
+								if camYawRel < -math.pi then camYawRel = camYawRel + 2 * math.pi end
+							end
+							-- Smooth the pitch and yaw
+							innerController._smoothedLookCamPitch = innerController._smoothedLookCamPitch or camPitch
+							innerController._smoothedLookCamYawRel = innerController._smoothedLookCamYawRel or camYawRel
+							innerController._smoothedLookCamPitch = innerController._smoothedLookCamPitch + (camPitch - innerController._smoothedLookCamPitch) * math.clamp(dt * SMOOTH_SPEED, 0, 1)
+							local yawInfluence = 1 --yawInfluenceCurve(camYawRel)
+							-- if yawInfluence == 0 then
+							-- 	innerController._smoothedLookCamYawRel = 0
+							-- else
+								innerController._smoothedLookCamYawRel = smoothAngle(innerController._smoothedLookCamYawRel, camYawRel, dt)
+							-- end
+							-- Set global drivers for replication
+							innerController:SetGlobalDriver("LookCamPitch", innerController._smoothedLookCamPitch)
+							innerController:SetGlobalDriver("LookCamYawRel", innerController._smoothedLookCamYawRel)
+							-- Blend the angles for UpperTorso and Head
+							if finalPose.UpperTorso and (restPose.UpperTorso or finalPose.UpperTorso) then
+								local base = restPose.UpperTorso or finalPose.UpperTorso
+								finalPose.UpperTorso = base * CFrame.Angles(innerController._smoothedLookCamPitch * 0.15 * lookAtWeight * yawInfluence, innerController._smoothedLookCamYawRel * 0.15 * lookAtWeight * yawInfluence, 0)
+							end
+							if finalPose.Head and (restPose.Head or finalPose.Head) then
+								local base = restPose.Head or finalPose.Head
+								finalPose.Head = base * CFrame.Angles(innerController._smoothedLookCamPitch * 0.85 * lookAtWeight * yawInfluence, innerController._smoothedLookCamYawRel * 0.85 * lookAtWeight * yawInfluence, 0)
+							end
+						end
+					else
+						-- For remote players, get camPitch and camYawRel from global drivers and smooth
+						local camPitch = innerController:GetGlobalDriver("LookCamPitch") or 0
+						local camYawRel = innerController:GetGlobalDriver("LookCamYawRel") or 0
 						innerController._smoothedLookCamPitch = innerController._smoothedLookCamPitch or camPitch
 						innerController._smoothedLookCamYawRel = innerController._smoothedLookCamYawRel or camYawRel
 						innerController._smoothedLookCamPitch = innerController._smoothedLookCamPitch + (camPitch - innerController._smoothedLookCamPitch) * math.clamp(dt * SMOOTH_SPEED, 0, 1)
-						local yawInfluence = 1 --yawInfluenceCurve(camYawRel)
-						-- if yawInfluence == 0 then
-						-- 	innerController._smoothedLookCamYawRel = 0
-						-- else
-							innerController._smoothedLookCamYawRel = smoothAngle(innerController._smoothedLookCamYawRel, camYawRel, dt)
-						-- end
-						-- Set global drivers for replication
-						innerController:SetGlobalDriver("LookCamPitch", innerController._smoothedLookCamPitch)
-						innerController:SetGlobalDriver("LookCamYawRel", innerController._smoothedLookCamYawRel)
+						innerController._smoothedLookCamYawRel = smoothAngle(innerController._smoothedLookCamYawRel, camYawRel, dt)
+						local yawInfluence = yawInfluenceCurve(innerController._smoothedLookCamYawRel)
 						-- Blend the angles for UpperTorso and Head
 						if finalPose.UpperTorso and (restPose.UpperTorso or finalPose.UpperTorso) then
 							local base = restPose.UpperTorso or finalPose.UpperTorso
@@ -627,24 +795,6 @@ local function createFluxaController(character: Model, bindingSetManager, isLoca
 							local base = restPose.Head or finalPose.Head
 							finalPose.Head = base * CFrame.Angles(innerController._smoothedLookCamPitch * 0.85 * lookAtWeight * yawInfluence, innerController._smoothedLookCamYawRel * 0.85 * lookAtWeight * yawInfluence, 0)
 						end
-					end
-				else
-					-- For remote players, get camPitch and camYawRel from global drivers and smooth
-					local camPitch = innerController:GetGlobalDriver("LookCamPitch") or 0
-					local camYawRel = innerController:GetGlobalDriver("LookCamYawRel") or 0
-					innerController._smoothedLookCamPitch = innerController._smoothedLookCamPitch or camPitch
-					innerController._smoothedLookCamYawRel = innerController._smoothedLookCamYawRel or camYawRel
-					innerController._smoothedLookCamPitch = innerController._smoothedLookCamPitch + (camPitch - innerController._smoothedLookCamPitch) * math.clamp(dt * SMOOTH_SPEED, 0, 1)
-					innerController._smoothedLookCamYawRel = smoothAngle(innerController._smoothedLookCamYawRel, camYawRel, dt)
-					local yawInfluence = yawInfluenceCurve(innerController._smoothedLookCamYawRel)
-					-- Blend the angles for UpperTorso and Head
-					if finalPose.UpperTorso and (restPose.UpperTorso or finalPose.UpperTorso) then
-						local base = restPose.UpperTorso or finalPose.UpperTorso
-						finalPose.UpperTorso = base * CFrame.Angles(innerController._smoothedLookCamPitch * 0.15 * lookAtWeight * yawInfluence, innerController._smoothedLookCamYawRel * 0.15 * lookAtWeight * yawInfluence, 0)
-					end
-					if finalPose.Head and (restPose.Head or finalPose.Head) then
-						local base = restPose.Head or finalPose.Head
-						finalPose.Head = base * CFrame.Angles(innerController._smoothedLookCamPitch * 0.85 * lookAtWeight * yawInfluence, innerController._smoothedLookCamYawRel * 0.85 * lookAtWeight * yawInfluence, 0)
 					end
 				end
 			end
@@ -661,6 +811,7 @@ local function createFluxaController(character: Model, bindingSetManager, isLoca
 		},
 	})
 
+	-- Always initialize all relevant drivers to non-nil defaults
 	controller:SetLayerDriver("Base", "State", "Ground")
 	controller:SetLayerDriver("Landing", "State", "Idle")
 	controller:SetLayerDriver("UpperBody", "State", "Idle")
@@ -671,6 +822,18 @@ local function createFluxaController(character: Model, bindingSetManager, isLoca
 	setBaseBlend(controller, "SmoothedPlanarSpeed", 0)
 	setBaseBlend(controller, "LastYaw", getYaw(character:GetPivot()))
 	setBaseBlend(controller, "TurnLean", 0)
+	setBaseBlend(controller, "Speed", 0)
+	setBaseBlend(controller, "Direction", Vector3.zero)
+	setBaseBlend(controller, "Moving", false)
+	setBaseBlend(controller, "AttackInfluence", 0)
+	setBaseBlend(controller, "AimPitch", 0)
+	setBaseBlend(controller, "AimPitchInput", 0)
+	-- Global drivers for LookCamPitch and LookCamYawRel (for remote player aiming)
+	controller:SetGlobalDriver("LookCamPitch", 0)
+	controller:SetGlobalDriver("LookCamYawRel", 0)
+	-- Debug print for driver initialization
+	print("[Fluxa][DEBUG] Initialized drivers for", character:GetFullName())
+	-- NOTE: The replication system does NOT clear values unless explicitly told to. Drivers retain their last value until overwritten.
 
 	bindingSetManager:AttachController(controller)
 
@@ -715,16 +878,34 @@ local function createFluxaController(character: Model, bindingSetManager, isLoca
 		local direction = getLayerBlend(innerController, "Base", "Direction", Vector3.zero)
 		local moveMag = math.min(1, direction.Magnitude)
 
-		if airState == "Jump" then return { Idle = 0, SlowWalk = 0, Walk = 0, Run = 0, Jump = 1, Fall = 0, Climb = 0 } end
-		if airState == "Fall" then return { Idle = 0, SlowWalk = 0, Walk = 0, Run = 0, Jump = 0, Fall = 1, Climb = 0 } end
-		if airState == "Climb" then return { Idle = 0, SlowWalk = 0, Walk = 0, Run = 0, Jump = 0, Fall = 0, Climb = 1 } end
-		if not moving then return { Idle = 1, SlowWalk = 0, Walk = 0, Run = 0, Jump = 0, Fall = 0, Climb = 0 } end
+		if airState == "Jump" then
+			return { Idle = 0, SlowWalk = 0, Walk = 0, Run = 0, Jump = 1, Fall = 0, Climb = 0 }
+		end
+		if airState == "Fall" then
+			return { Idle = 0, SlowWalk = 0, Walk = 0, Run = 0, Jump = 0, Fall = 1, Climb = 0 }
+		end
+		if airState == "Climb" then
+			return { Idle = 0, SlowWalk = 0, Walk = 0, Run = 0, Jump = 0, Fall = 0, Climb = 1 }
+		end
+		if not moving then
+			return { Idle = 1, SlowWalk = 0, Walk = 0, Run = 0, Jump = 0, Fall = 0, Climb = 0 }
+		end
 		if shiftHeld then
 			local slowWeight = math.clamp(speed / SLOW_WALK_SPEED, 0, 1)
 			return { Idle = 1 - slowWeight, SlowWalk = slowWeight, Walk = 0, Run = 0, Jump = 0, Fall = 0, Climb = 0 }
 		end
-		return { Idle = 1 - moveMag, SlowWalk = 0, Walk = moveMag * (1 - momentum), Run = moveMag * momentum, Jump = 0, Fall = 0, Climb = 0 }
+		local result = { Idle = 1 - moveMag, SlowWalk = 0, Walk = moveMag * (1 - momentum), Run = moveMag * momentum, Jump = 0, Fall = 0, Climb = 0 }
+		return result
 	end)
+
+	-- Disable replication for velocity-based drivers on local player
+	controller:SetLayerDriverReplication("Base", "Moving", false)
+	controller:SetLayerDriverReplication("Base", "SmoothedPlanarSpeed", false)
+	controller:SetLayerDriverReplication("Base", "Speed", false)
+	controller:SetLayerDriverReplication("Base", "LastYaw", false)
+	controller:SetLayerDriverReplication("Base", "TurnLean", false)
+	controller:SetLayerDriverReplication("Base", "WasAirborne", false)
+	controller:SetLayerDriverReplication("Base", "LastLandTriggerTime", false)
 
 	return controller
 end
@@ -771,53 +952,144 @@ local function destroyNPCControllerByModel(npcCharacter: Model)
 	end
 end
 
+-- Only create a Fluxa controller for visual NPCs (not server dummies)
 local function bootstrapTaggedNPC(npcCharacter: Model, bindingSetManager)
 	local id = getNpcIdFromModel(npcCharacter)
 	if id == nil then
 		return
 	end
 
-	destroyNPCController(id)
-	npcCharacter:WaitForChild("Humanoid")
-	npcCharacter:WaitForChild("HumanoidRootPart")
-	npcCharacter:WaitForChild("Head")
-	disableBuiltInCharacterAnimation(npcCharacter)
+	-- Find or create the visual NPC in workspace.CurrentCamera
+	local camera = Workspace.CurrentCamera
+	if not camera then return end
+	local visualNPC = nil
+	for _, child in ipairs(camera:GetChildren()) do
+		if child:IsA("Model") and child:GetAttribute(FLUXA_NPC_ID_ATTRIBUTE) == id then
+			visualNPC = child
+			break
+		end
+	end
+	if not visualNPC then
+		-- Clone the server NPC as the visual NPC
+		visualNPC = ReplicatedStorage:FindFirstChild("ServerNPC"):Clone()
+		visualNPC.Parent = camera
+		visualNPC:SetAttribute(FLUXA_NPC_ID_ATTRIBUTE, id)
+		visualNPC.Name = "ClientVisualNPC_" .. id
+		-- Mark as client visual
+		visualNPC:SetAttribute("ClientVisual", true)
+	end
 
-	local npcController = createFluxaController(npcCharacter, bindingSetManager, false)
+	visualNPC:WaitForChild("Humanoid")
+	visualNPC:WaitForChild("HumanoidRootPart")
+	visualNPC:WaitForChild("Head")
+	disableBuiltInCharacterAnimation(visualNPC)
+
+	local npcController = createFluxaController(visualNPC, bindingSetManager, false, true)
 	_npcControllers[id] = npcController
 	FluxaService.RegisterController(id, npcController)
+
+	-- Set up following logic: sync position/velocity from server NPC to visual NPC
+	local function followServerNPC()
+		local serverRoot = npcCharacter:WaitForChild("HumanoidRootPart")
+		local serverHumanoid = npcCharacter:WaitForChild("Humanoid")
+		local clientRoot = visualNPC:FindFirstChild("HumanoidRootPart")
+		local clientHumanoid = visualNPC:FindFirstChild("Humanoid")
+		if not (serverRoot and clientRoot) then return end
+
+		serverRoot.CanCollide = false
+		setBaseBlend(npcController, "LastYaw", getYaw(serverRoot.CFrame))
+		-- Use custom state driver and movement driver for client-only NPCs
+		createNPCStateDriver(npcController, clientHumanoid, clientRoot, connect)
+		createNPCMovementDriver(npcController, clientRoot, connect)
+
+		createLookAtIKControl(visualNPC, clientHumanoid, false)
+    
+		RunService.RenderStepped:Connect(function()
+			if not (serverRoot.Parent and clientRoot.Parent) then return end
+			clientRoot.CFrame = serverRoot.CFrame
+			clientRoot.AssemblyLinearVelocity = serverRoot.AssemblyLinearVelocity
+
+			-- Update LookTarget every frame
+			local radius = 32
+			local head = visualNPC:FindFirstChild("Head")
+			local root = clientRoot or visualNPC:FindFirstChild("HumanoidRootPart") or visualNPC.PrimaryPart
+			if not head or not root then return end
+			local closest, closestDist = nil, radius
+			for _, other in ipairs(workspace:GetDescendants()) do
+				if other:IsA("Humanoid") and other ~= clientHumanoid and other.Health > 0 then
+					local otherRoot = other.Parent and other.Parent:FindFirstChild("HumanoidRootPart")
+					if otherRoot and otherRoot ~= serverRoot then
+						local dist = (serverRoot.Position - otherRoot.Position).Magnitude
+						-- Angle check: only consider targets in front of the NPC (e.g., within 90 degrees)
+						local toOther = (otherRoot.Position - serverRoot.Position).Unit
+						local forward = serverRoot.CFrame.LookVector.Unit
+						local dot = forward:Dot(toOther)
+						local angle = math.acos(math.clamp(dot, -1, 1))
+						local maxAngle = math.rad(45) -- 45 degrees in front
+						if dist < closestDist and angle <= maxAngle then
+							closest = otherRoot
+							closestDist = dist
+						end
+					end
+				end
+			end
+			local ikControl = clientHumanoid:FindFirstChildOfClass("IKControl")
+			if ikControl then
+				ikControl.Enabled = true
+				local targetWeight = 0
+				if closest then
+					local att = closest:FindFirstChild("RootAttachment") or closest:FindFirstChild("RootRigAttachment")
+					if att then
+						ikControl.Target = att
+						targetWeight = 1
+					end
+				end
+				-- Lerp current weight toward targetWeight
+				ikControl.Weight = ikControl.Weight and (ikControl.Weight + (targetWeight - ikControl.Weight) * 0.2) or targetWeight
+			end
+		end)
+	end
+	followServerNPC()
 end
 
 local function bootstrapRemotePlayer(player, bindingSetManager)
-	if player == LocalPlayer then
-		return
-	end
+    if player == LocalPlayer then
+        return
+    end
 
-	local function spawnForCharacter(character)
-		destroyRemoteController(player)
+    local function spawnForCharacter(character)
+        destroyRemoteController(player)
 
-		character:WaitForChild("Humanoid")
-		character:WaitForChild("HumanoidRootPart")
-		character:WaitForChild("Head")
-		disableBuiltInCharacterAnimation(character)
+        character:WaitForChild("Humanoid")
+        character:WaitForChild("HumanoidRootPart")
+        character:WaitForChild("Head")
+        disableBuiltInCharacterAnimation(character)
 
-		local remoteController = createFluxaController(character, bindingSetManager, false)
-		_remoteControllers[player] = remoteController
-		FluxaService.RegisterController(player, remoteController)
-		FluxaReplicationService.StartRemoteReplication(remoteController, player)
-	end
+        local remoteController = createFluxaController(character, bindingSetManager, false)
+        _remoteControllers[player] = remoteController
+        FluxaService.RegisterController(player, remoteController)
+        FluxaReplicationService.StartRemoteReplication(remoteController, player)
 
-	connect(player.CharacterAdded, function(character)
-		spawnForCharacter(character)
-	end)
+        -- Use velocity-based drivers for remote players
+        local humanoid = character:FindFirstChild("Humanoid")
+        local root = character:FindFirstChild("HumanoidRootPart")
+        if humanoid and root then
+            createNPCStateDriver(remoteController, humanoid, root, connect)
+            createNPCMovementDriver(remoteController, root, connect, true)
+        end
+    end
 
-	connect(player.CharacterRemoving, function()
-		destroyRemoteController(player)
-	end)
+    connect(player.CharacterAdded, function(character)
+        spawnForCharacter(character)
+    end)
 
-	if player.Character then
-		spawnForCharacter(player.Character)
-	end
+    connect(player.CharacterRemoving, function()
+        destroyRemoteController(player)
+    end)
+
+    if player.Character then
+        spawnForCharacter(player.Character)
+    end
 end
 
 function module:Start(_clientScript: LocalScript)
@@ -916,7 +1188,7 @@ function module:Start(_clientScript: LocalScript)
 	connect(Players.PlayerRemoving, function(player)
 		destroyRemoteController(player)
 	end)
-
+	
 	print("Example5 loaded! Set StarterPlayerScripts.Client.ex = 5 to use binding-manager + FluxaService demo with server NPCs.")
 end
 

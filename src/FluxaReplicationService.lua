@@ -263,6 +263,7 @@ end
 
 function ReplicationService.SendLocalPacket()
 	if not _localReplicationEnabled then
+		warn("local replication disabled")
 		return
 	end
 
@@ -273,6 +274,7 @@ function ReplicationService.SendLocalPacket()
 
 	-- In ServerOwned mode, never send local packets (neither client nor server)
 	if mode == FluxaTypes.ReplicationMode.ServerOwned or mode == FluxaTypes.ReplicationMode.LocalOnly then
+		warn("local replication disabled due to replication mode")
 		return
 	end
 
@@ -280,16 +282,20 @@ function ReplicationService.SendLocalPacket()
 	if mode == FluxaTypes.ReplicationMode.ClientOwned and RunService:IsClient() then
 		local remoteEvent = tryGetRemoteEvent()
 		if remoteEvent == nil then
+			warn("failed 1")
 			return
 		end
 		local packet = buildLocalPacket(true, true)
 		if not packet then
+			warn("failed 2")
 			return
 		end
 		remoteEvent:FireServer(packet)
 		if _localController ~= nil and _localController.MarkTrackBindingsSent ~= nil then
 			_localController:MarkTrackBindingsSent()
 		end
+	else
+		warn("broke")
 	end
 end
 
