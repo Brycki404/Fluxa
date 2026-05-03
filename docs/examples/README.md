@@ -9,6 +9,20 @@ The included examples escalate from raw API usage to controller workflows and mo
 | [Example 3](example-3.md) | Full FluxaController: layers, blend trees, one-shots, replication |
 | [Example 4](example-4.md) | Binding catalogs and runtime track swapping with FluxaBindingSetManager |
 
-To run an example in the dev place, set the `StarterPlayerScripts/Client.ex` attribute to `1`, `2`, or `3`.
+## Running examples in the dev place
 
-Example 4 is intentionally not wired into the dev place by default. It expects a dedicated `ReplicatedStorage.Example4Animations_R15` folder that includes the extra bindings referenced by its catalog.
+Set the `StarterPlayerScripts/Client.ex` attribute to:
+
+* `1` for Example 1
+* `2` for Example 2
+* `3` for Example 3
+* `4` for Example 4
+
+### Setup notes for Example 4
+
+Example 4 is not wired by default and expects additional animations referenced by its binding catalog.
+
+1. Create `ReplicatedStorage/Example4Animations_R15`.
+2. Add the animations used by the Example 4 binding sets (for example idle/walk/run and rifle variants).
+3. Set `StarterPlayerScripts/Client.ex` to `4`.
+4. Run the dev place.

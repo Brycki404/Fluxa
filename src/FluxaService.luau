@@ -501,7 +501,9 @@ local function buildPlayEnvelope(target: ResolvedAnimTarget, trackName: string, 
 		TargetType = target.TargetType,
 		TargetValue = target.TargetValue,
 		TrackName = trackName,
-		FadeTime = if options ~= nil then (options.FadeInTime or options.FadeTime) else nil,
+		FadeTime = if options ~= nil
+			then if options.FadeInTime ~= nil then options.FadeInTime else options.FadeTime
+			else nil,
 		Weight = if options ~= nil then options.Weight else nil,
 		Speed = if options ~= nil then options.Speed else nil,
 	}
@@ -514,7 +516,9 @@ local function buildStopEnvelope(target: ResolvedAnimTarget, trackName: string?,
 		TargetType = target.TargetType,
 		TargetValue = target.TargetValue,
 		TrackName = trackName or "",
-		FadeTime = if options ~= nil then (options.FadeOutTime or options.FadeTime) else nil,
+		FadeTime = if options ~= nil
+			then if options.FadeOutTime ~= nil then options.FadeOutTime else options.FadeTime
+			else nil,
 		Weight = nil,
 		Speed = nil,
 	}

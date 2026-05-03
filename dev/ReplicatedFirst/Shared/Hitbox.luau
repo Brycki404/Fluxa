@@ -253,7 +253,7 @@ function hitboxMT.run(self, enable): ()
 	if self.Mode == hitboxmode_continuous then
 		print(enable)
 		local isboolean = typeof(enable) == "boolean"
-		enable = (isboolean == true and enable) or true
+		enable = if isboolean == true then enable else true
 		print(enable)
 		self:continuous(enable)
 	elseif self.Mode == hitboxmode_once then

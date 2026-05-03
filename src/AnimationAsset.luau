@@ -262,7 +262,7 @@ function AnimationAsset.GetLength(self: AnimationAssetInstance)
 end
 
 function AnimationAsset.GetEventsAt(self: AnimationAssetInstance, time: number, window: number?): { AnimationEvent }
-	local safeWindow: number = window or 0.033
+	local safeWindow: number = if window ~= nil then window else 0.033
 	local lower = math.max(0, time - safeWindow)
 	local upper = time
 

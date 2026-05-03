@@ -32,6 +32,7 @@ type ReplicationPacketOptions = FluxaTypes.ReplicationPacketOptions
 type ReplicationPacket = FluxaTypes.ReplicationPacket
 type BlendTreeResolver = FluxaTypes.BlendTreeResolver
 type TrackBindingResolver = FluxaTypes.TrackBindingResolver
+type AnimationTrackInstance = FluxaTypes.AnimationTrackInstance
 
 local FluxaController = {}
 FluxaController.__index = FluxaController
@@ -215,7 +216,7 @@ local function getTrackNormalizedPhase(track: any): number?
 	return math.clamp(timePosition / duration, 0, 1)
 end
 
-local function applyTrackNormalizedPhase(track: any, normalizedPhase: number?)
+local function applyTrackNormalizedPhase(track: AnimationTrackInstance, normalizedPhase: number?)
 	if normalizedPhase == nil then
 		return
 	end
@@ -231,21 +232,16 @@ local function applyTrackNormalizedPhase(track: any, normalizedPhase: number?)
 	end
 
 	local nextTimePosition = math.clamp(normalizedPhase, 0, 1) * duration
-	if (track :: any).TimePosition ~= nil then
-		(track :: any).TimePosition = nextTimePosition
+	if track.TimePosition ~= nil then
+		track.TimePosition = nextTimePosition
 	end
-	if (track :: any).Time ~= nil then
-		(track :: any).Time = nextTimePosition
+	if track.Time ~= nil then
+		track.Time = nextTimePosition
 	end
 end
 
 local function shouldTrackAutoReplicate(trackState: TrackState): boolean
 	if trackState.AutoReplicate then
-		return true
-	end
-
-	local track = trackState.Track
-	if track ~= nil and (track :: any).AutoReplicate == true then
 		return true
 	end
 
@@ -272,7 +268,7 @@ local function blendPoseOverride(target: PoseData, incoming: PoseData, weight: n
 			continue
 		end
 
-		local existing = (target :: any)[joint]
+		local existing = target[joint]
 		if existing then
 			target[joint] = existing:Lerp(cf, alpha)
 		else
@@ -294,7 +290,7 @@ local function blendPoseAdditive(target: PoseData, incoming: PoseData, weight: n
 		end
 
 		local delta = CFrame.new():Lerp(cf, alpha)
-		local existing = (target :: any)[joint]
+		local existing = target[joint]
 		if existing then
 			target[joint] = existing * delta
 		else
@@ -362,7 +358,7 @@ function FluxaController.new(options: NewControllerOptions): ControllerInstance
 	local self = setmetatable({}, FluxaController) :: any
 	self.Character = options.Character
 	self.AutoApplyPose = if options.AutoApplyPose ~= nil then options.AutoApplyPose else true
-	self.WeightSmoothingSpeed = options.WeightSmoothingSpeed or 12
+	self.WeightSmoothingSpeed = if options.WeightSmoothingSpeed ~= nil then options.WeightSmoothingSpeed else 12
 	self.OnPreStep = options.OnPreStep
 	self.OnPostStep = options.OnPostStep
 	self.OnPostBlend = options.OnPostBlend

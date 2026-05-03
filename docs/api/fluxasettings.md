@@ -1,15 +1,59 @@
 # FluxaSettings
 
-Shared constants and configuration for Fluxa modules (server and client).
+Module path: `Fluxa.FluxaSettings`
 
-## Key Settings
-- `ANIMATION_START_REPLICATION_WINDOW`
-- `NPC_REPLICATION_REMOTE`, `NPC_NOTIFY_REMOTE`, `ANIM_CMD_REMOTE`
-- `NPC_SEND_RATE_HZ`, `NPC_START_TIMES_INTERVAL`, `DEFAULT_PLAY_RATE_LIMIT_WINDOW`
-- `REMOTE_EVENT_NAME`, `SEND_RATE_HZ`, `ANIMATION_START_TIMES_INTERVAL`, `TRACK_BINDINGS_SYNC_INTERVAL`
+Shared constants and runtime configuration for Fluxa modules on both server and client.
 
 ## API
-- `FluxaSettings.Get(index, defaultValue)`
-- `FluxaSettings.Set(index, value)`
 
-See source for all available settings.
+#### `FluxaSettings.Get(index, defaultValue)`
+
+Gets a setting by key, returning `defaultValue` when missing.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `index` | `string` | Setting key |
+| `defaultValue` | `any` | Value returned if key is not set |
+
+Returns: `any`
+
+#### `FluxaSettings.Set(index, value)`
+
+Sets or overrides a setting key at runtime.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `index` | `string` | Setting key |
+| `value` | `any` | New value |
+
+## Built-in Settings
+
+#### Controller
+
+* `ANIMATION_START_REPLICATION_WINDOW = 0.6`
+
+#### FluxaService remotes
+
+* `NPC_REPLICATION_REMOTE = "FluxaService_NPCReplication"`
+* `NPC_NOTIFY_REMOTE = "FluxaService_NPCNotify"`
+* `ANIM_CMD_REMOTE = "FluxaService_AnimCmd"`
+
+#### FluxaService behavior
+
+* `NPC_SEND_RATE_HZ = 20`
+* `NPC_START_TIMES_INTERVAL = 0.25`
+* `DEFAULT_PLAY_RATE_LIMIT_WINDOW = 0.05`
+* `LOD_TIERS = { {dist, rate}, ... }` distance-based replication rates
+
+#### FluxaReplicationService
+
+* `REMOTE_EVENT_NAME = "FluxaReplication"`
+* `ANIMATION_START_TIMES_INTERVAL = 0.25`
+* `TRACK_BINDINGS_SYNC_INTERVAL = 1.0`
+
+```lua
+local FluxaSettings = Fluxa.FluxaSettings
+
+-- Example: change default play command rate-limit window
+FluxaSettings.Set("DEFAULT_PLAY_RATE_LIMIT_WINDOW", 0.1)
+```

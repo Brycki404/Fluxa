@@ -51,4 +51,51 @@ end
 
 Blend tree evaluation is triggered automatically each frame by the global step loop in `FluxaService` (client-side). You do not need to manually call blend tree functions.
 
-For full documentation of the `BlendTree` module API, see the [Fluxa GitBook](https://brycki404.gitbook.io/fluxa/api-reference/blendtree).
+## Utility helpers
+
+`BlendTree` also includes helper evaluators for simple data-driven blending.
+
+### `BlendTree.Simple1D(params, nodes)`
+
+Evaluates 1D weights using a single numeric input.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `params` | `{ Value: number }` | Input value |
+| `nodes` | `{[string]: (number) -> number}` | Weight callbacks by track name |
+
+Returns: `{[string]: number}`
+
+```lua
+local weights = Fluxa.BlendTree.Simple1D(
+    { Value = speed },
+    {
+        Idle = function(v) return v <= 0.1 and 1 or 0 end,
+        Walk = function(v) return math.clamp(1 - math.abs(v - 6) / 6, 0, 1) end,
+        Run = function(v) return math.clamp((v - 8) / 8, 0, 1) end,
+    }
+)
+```
+
+### `BlendTree.Simple2D(params, nodes)`
+
+Evaluates 2D weights using X/Y inputs.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `params` | `{ X: number, Y: number }` | 2D input |
+| `nodes` | `{[string]: (number, number) -> number}` | Weight callbacks by track name |
+
+Returns: `{[string]: number}`
+
+```lua
+local weights = Fluxa.BlendTree.Simple2D(
+    { X = moveX, Y = moveY },
+    {
+        Forward = function(x, y) return math.clamp( y, 0, 1) end,
+        Backward = function(x, y) return math.clamp(-y, 0, 1) end,
+        Left = function(x, y) return math.clamp(-x, 0, 1) end,
+        Right = function(x, y) return math.clamp( x, 0, 1) end,
+    }
+)
+```

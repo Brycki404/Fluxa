@@ -25,6 +25,9 @@ local Fluxa = require(ReplicatedStorage.Packages.fluxa)
 | `FluxaBindingSetManager` | `Fluxa.FluxaBindingSetManager` | Resolve/apply binding sets to controllers using asset caching |
 | `FluxaController` | `Fluxa.FluxaController` | Full animation graph: tracks, layers, blend trees, replication |
 | `FluxaReplicationService` | `Fluxa.FluxaReplicationService` | Cross-client animation state replication |
+| `FluxaService` | `Fluxa.FluxaService` | Global controller registry, command routing, and optional global stepping |
+| `FluxaSettings` | `Fluxa.FluxaSettings` | Shared runtime settings and constants |
+| `Signal` | `Fluxa.Signal` | Yield-safe event signal utility |
 
 ### Layer stack
 
@@ -76,9 +79,11 @@ for _, seq in ipairs(animFolder:GetChildren()) do
     end
 end
 
--- 2. Destroy Roblox's default Animator (you actually don't have to anymore since Fluxa 5.2.0, you just have to disable the default Animate script)
-local animator = humanoid:FindFirstChildOfClass("Animator")
-if animator then animator:Destroy() end
+-- 2. Disable Roblox's default Animate script to avoid controller conflicts
+local animate = character:FindFirstChild("Animate")
+if animate then
+    animate.Disabled = true
+end
 
 -- 3. Create controller
 local controller = FluxaController.new({
@@ -141,6 +146,7 @@ end)
 ### Quick start: raw API (Example 1/2 pattern)
 
 ```lua
+local Fluxa = require(ReplicatedStorage.Packages.fluxa)
 local AnimationAsset = Fluxa.AnimationAsset
 local AnimationTrack = Fluxa.AnimationTrack
 local Pose = Fluxa.Pose

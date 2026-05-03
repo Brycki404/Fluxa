@@ -9,7 +9,7 @@ local Retargeting = {}
 
 function Retargeting.MapPose(pose: { [string]: CFrame }, map: RetargetMap, options: RetargetOptions?)
 	local result: { [string]: CFrame } = {}
-	local scale = options and options.Scale or 1
+	local scale = if options ~= nil and options.Scale ~= nil then options.Scale else 1
 	for sourceJoint, targetJoint in pairs(map) do
 		local transform = pose[sourceJoint]
 		if transform then

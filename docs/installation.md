@@ -16,6 +16,18 @@ Then run:
 wally install
 ```
 
+#### Rokit (recommended for local development)
+
+This repository includes a pinned toolchain in `rokit.toml` (Rojo, Wally, StyLua, Selene, and wally-package-types).
+
+If you use Rokit, install all required tools with:
+
+```bash
+rokit install
+```
+
+This ensures your local versions match the project tool versions.
+
 #### Rojo
 
 If you want to develop locally, point your `default.project.json` or Rojo project at the `src/` folder.
