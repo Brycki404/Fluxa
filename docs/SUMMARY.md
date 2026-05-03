@@ -8,6 +8,7 @@
   * [Example 2](examples/example-2.md)
   * [Example 3](examples/example-3.md)
   * [Example 4](examples/example-4.md)
+  * [Example 5](examples/example-5.md)
 * [API Reference](api/fluxa-api-reference.md)
   * [FluxaAssetManager](api/fluxaassetmanager.md)
   * [FluxaBindingCatalog](api/fluxabindingcatalog.md)
@@ -21,5 +22,4 @@
   * [FluxaSettings](api/fluxasettings.md)
   * [Pose](api/pose.md)
   * [Retargeting](api/retargeting.md)
-  * [Signal](api/signal.md)
   * [UniversalJointWriter](api/universaljointwriter.md)

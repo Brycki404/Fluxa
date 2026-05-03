@@ -8,6 +8,7 @@ The included examples escalate from raw API usage to controller workflows and mo
 | [Example 2](example-2.md) | Manual state machine: locomotion, momentum, phase sync, turn lean |
 | [Example 3](example-3.md) | Full FluxaController: layers, blend trees, one-shots, replication |
 | [Example 4](example-4.md) | Binding catalogs and runtime track swapping with FluxaBindingSetManager |
+| [Example 5](example-5.md) | Binding-manager + FluxaService multi-actor routing (local, remote, NPC visuals) |
 
 ## Running examples in the dev place
 
@@ -17,6 +18,7 @@ Set the `StarterPlayerScripts/Client.ex` attribute to:
 * `2` for Example 2
 * `3` for Example 3
 * `4` for Example 4
+* `5` for Example 5
 
 ### Setup notes for Example 4
 
@@ -26,3 +28,11 @@ Example 4 is not wired by default and expects additional animations referenced b
 2. Add the animations used by the Example 4 binding sets (for example idle/walk/run and rifle variants).
 3. Set `StarterPlayerScripts/Client.ex` to `4`.
 4. Run the dev place.
+
+### Setup notes for Example 5
+
+1. Ensure `ReplicatedStorage/Example3Animations_R15` (or `Example2Animations_R15`) exists.
+2. Ensure a `ServerNPC` model exists in `Workspace`.
+3. Ensure `dev/ServerScriptService/Server/Example5NPC.server.luau` is present/enabled in the dev place.
+4. Set `StarterPlayerScripts/Client.ex` to `5`.
+5. Run the dev place.
