@@ -17,6 +17,12 @@ Settings.DEFAULT_PLAY_RATE_LIMIT_WINDOW = 0.05
 
 -- Fluxa Replication Service settings
 Settings.REMOTE_EVENT_NAME = "FluxaReplication"
+Settings.SATSET_RELIABLE = true
+Settings.SATSET_CLIENT_PACKET_NAME = "FluxaReplication_ClientToServer"
+Settings.SATSET_SERVER_PACKET_NAME = "FluxaReplication_ServerToClient"
+Settings.SATSET_GUARD_MAX_TOKENS = 60
+Settings.SATSET_GUARD_REFILL_RATE = 30
+Settings.SATSET_GUARD_STUDIO_BYPASS = true
 -- LOD send rates (Hz) by distance (studs)
 Settings.LOD_TIERS = {
 	{ dist = 20, rate = 20 },   -- 0-20 studs: 20 Hz
@@ -37,7 +43,11 @@ local FluxaSettings = {}
 FluxaSettings.Settings = Settings
 
 function FluxaSettings.Get(index: string, defaultValue: any): any
-    return FluxaSettings.Settings[index] or defaultValue
+	local value = FluxaSettings.Settings[index]
+	if value ~= nil then
+		return value
+	end
+	return defaultValue
 end
 
 function FluxaSettings.Set(index: string, value: any): ()

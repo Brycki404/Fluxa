@@ -50,6 +50,12 @@ Sets or overrides a setting key at runtime.
 * `REMOTE_EVENT_NAME = "FluxaReplication"`
 * `ANIMATION_START_TIMES_INTERVAL = 0.25`
 * `TRACK_BINDINGS_SYNC_INTERVAL = 1.0`
+* `SATSET_RELIABLE = true`
+* `SATSET_CLIENT_PACKET_NAME = "FluxaReplication_ClientToServer"`
+* `SATSET_SERVER_PACKET_NAME = "FluxaReplication_ServerToClient"`
+* `SATSET_GUARD_MAX_TOKENS = 60`
+* `SATSET_GUARD_REFILL_RATE = 30`
+* `SATSET_GUARD_STUDIO_BYPASS = true`
 
 ```lua
 local FluxaSettings = Fluxa.FluxaSettings

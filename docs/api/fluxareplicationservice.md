@@ -4,6 +4,8 @@ Module path: `Fluxa.FluxaReplicationService`
 
 `FluxaReplicationService` handles cross-client animation state synchronization. It serializes a `FluxaController` replication packet each frame (track bindings, global drivers, layer drivers, and recent animation start markers) and broadcasts it to remote clients, where a second "remote" controller applies the received packet.
 
+By default, Fluxa now uses Satset packet transport when a `ReplicatedFirst.Shared.Satset` module is available at runtime. If Satset is not present, the service falls back to the legacy `RemoteEvent` transport so existing integrations do not hard-fail.
+
 ### Overview
 
 Fluxa replication uses a two-controller model:
@@ -12,6 +14,8 @@ Fluxa replication uses a two-controller model:
 * **Remote controller**: a controller on every other client for the same character. Has no drivers. Receives replication packets and applies them to stay in sync.
 
 ### Setup
+
+If you are using Satset, ensure the Satset module exists at `ReplicatedFirst.Shared.Satset`. `FluxaReplicationService` will initialize Satset automatically on both client and server when replication starts.
 
 On the local client, after creating the character's controller:
 
@@ -55,10 +59,12 @@ Each `TrackConfig` accepts a `ReplicationSeekMode` string:
 * Layer drivers filtered by per-driver replication flags
 * Animation start markers (`MarkLayerAnimationStart` or auto start markers from `AutoReplicate` tracks)
 * Track bindings (`trackName -> bindingId`) so remote controllers can hot-swap tracks without changing blend trees
+* Supported driver value types: `boolean`, `number`, `string`, `Vector2`, `Vector3`, `Color3`, and `CFrame`
 
 ### What is not replicated
 
 * Drivers explicitly disabled via `SetGlobalDriverReplication(..., false)` or `SetLayerDriverReplication(..., false)`
+* Driver values of unsupported types are skipped before transport
 * Blend tree function logic
 * Procedural overrides applied in `OnPostBlend`
 

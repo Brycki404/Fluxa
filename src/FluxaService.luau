@@ -2,10 +2,12 @@
 -- FluxaService: registry + server-authoritative routing for FluxaController instances.
 
 local Players = game:GetService("Players")
+local ReplicatedFirst = game:GetService("ReplicatedFirst")
 local RunService = game:GetService("RunService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Signal = require(script.Parent.Signal)
+local FluxaSatsetTransport = require(script.Parent.FluxaSatsetTransport)
 local FluxaTypes = require(script.Parent.FluxaTypes)
 local FluxaSettings = require(script.Parent.FluxaSettings)
 
@@ -31,6 +33,14 @@ local _npcEntries = {} :: {[string]: NPCEntry}
 local _playRateLimit = {} :: {[string]: number}
 local _knownNPCs = {} :: {[string]: Model?}
 local _npcStepConnection: RBXScriptConnection? = nil
+local _satset = nil :: any
+local _satsetInitialized = false
+local _satsetListenersBound = false
+local _satsetNPCReplicationPacket = nil :: any
+local _satsetAnimCmdPacket = nil :: any
+
+local getOrCreateRemote
+local findRemote
 
 local FluxaService = {}
 
@@ -39,7 +49,489 @@ FluxaService.Unregistered = Signal.new()
 FluxaService.OnNPCRegistered = nil :: ((id: string, character: Model?) -> ())?
 FluxaService.OnNPCUnregistered = nil :: ((id: string) -> ())?
 
-local function getOrCreateRemote(name: string): RemoteEvent
+local function sanitizeDriverValue(value: any): any
+	local valueType = typeof(value)
+	if valueType == "boolean"
+		or valueType == "number"
+		or valueType == "string"
+		or valueType == "Vector2"
+		or valueType == "Vector3"
+		or valueType == "Color3"
+		or valueType == "CFrame" then
+		return value
+	end
+
+	return nil
+end
+
+local function sanitizeDriverMap(driverMap: any): {[string]: any}
+	if type(driverMap) ~= "table" then
+		return {}
+	end
+
+	local sanitized: {[string]: any} = {}
+	for key, value in pairs(driverMap) do
+		if type(key) == "string" then
+			local sanitizedValue = sanitizeDriverValue(value)
+			if sanitizedValue ~= nil then
+				sanitized[key] = sanitizedValue
+			end
+		end
+	end
+
+	return sanitized
+end
+
+local function sanitizeAnimationStartTimes(animationStartTimes: any): {[string]: number}
+	if type(animationStartTimes) ~= "table" then
+		return {}
+	end
+
+	local sanitized: {[string]: number} = {}
+	for key, value in pairs(animationStartTimes) do
+		if type(key) == "string" and type(value) == "number" then
+			sanitized[key] = value
+		end
+	end
+
+	return sanitized
+end
+
+local function sanitizeTrackBindings(trackBindings: any): {[string]: string}?
+	if type(trackBindings) ~= "table" then
+		return nil
+	end
+
+	local sanitized: {[string]: string} = {}
+	for key, value in pairs(trackBindings) do
+		if type(key) == "string" and type(value) == "string" then
+			sanitized[key] = value
+		end
+	end
+
+	return sanitized
+end
+
+local function sanitizeReplicationPacket(packet: any): any
+	if type(packet) ~= "table" then
+		return nil
+	end
+
+	local sanitizedLayers = {}
+	if type(packet.Layers) == "table" then
+		for layerName, layerState in pairs(packet.Layers) do
+			if type(layerName) == "string" and type(layerState) == "table" then
+				sanitizedLayers[layerName] = {
+					Drivers = sanitizeDriverMap(layerState.Drivers),
+					AnimationStartTimes = sanitizeAnimationStartTimes(layerState.AnimationStartTimes),
+				}
+			end
+		end
+	end
+
+	return {
+		Timestamp = if type(packet.Timestamp) == "number" then packet.Timestamp else 0,
+		Drivers = sanitizeDriverMap(packet.Drivers),
+		Layers = sanitizedLayers,
+		TrackBindings = sanitizeTrackBindings(packet.TrackBindings),
+	}
+end
+
+local function _tryGetSatset()
+	if _satset == false then
+		return nil
+	end
+
+	if _satset ~= nil then
+		return _satset
+	end
+
+	local shared = ReplicatedFirst:FindFirstChild("Shared")
+	local satsetModule = if shared ~= nil then shared:FindFirstChild("Satset") else nil
+	if satsetModule == nil or not satsetModule:IsA("ModuleScript") then
+		_satset = false
+		return nil
+	end
+
+	local ok, result = pcall(require, satsetModule)
+	if not ok then
+		warn(("FluxaService: failed to require Satset (%s); falling back to RemoteEvent transport"):format(tostring(result)))
+		_satset = false
+		return nil
+	end
+
+	_satset = result
+	return _satset
+end
+
+local function createDriverValueType(types: any)
+	local tagNil = 0
+	local tagBoolean = 1
+	local tagNumber = 2
+	local tagString = 3
+	local tagVector2 = 4
+	local tagVector3 = 5
+	local tagColor3 = 6
+	local tagCFrame = 7
+
+	return {
+		read = function(bufferValue: buffer, cursor: number)
+			local tag = buffer.readu8(bufferValue, cursor)
+			if tag == tagBoolean then
+				return types.bool.read(bufferValue, cursor + 1)
+			elseif tag == tagNumber then
+				return types.f64.read(bufferValue, cursor + 1)
+			elseif tag == tagString then
+				return types.string16.read(bufferValue, cursor + 1)
+			elseif tag == tagVector2 then
+				return types.Vector2.read(bufferValue, cursor + 1)
+			elseif tag == tagVector3 then
+				return types.Vector3.read(bufferValue, cursor + 1)
+			elseif tag == tagColor3 then
+				return types.Color3.read(bufferValue, cursor + 1)
+			elseif tag == tagCFrame then
+				return types.CFrame.read(bufferValue, cursor + 1)
+			end
+
+			return nil
+		end,
+		write = function(bufferValue: buffer, cursor: number, value: any)
+			local valueType = typeof(value)
+			if valueType == "boolean" then
+				buffer.writeu8(bufferValue, cursor, tagBoolean)
+				types.bool.write(bufferValue, cursor + 1, value)
+			elseif valueType == "number" then
+				buffer.writeu8(bufferValue, cursor, tagNumber)
+				types.f64.write(bufferValue, cursor + 1, value)
+			elseif valueType == "string" then
+				buffer.writeu8(bufferValue, cursor, tagString)
+				types.string16.write(bufferValue, cursor + 1, value)
+			elseif valueType == "Vector2" then
+				buffer.writeu8(bufferValue, cursor, tagVector2)
+				types.Vector2.write(bufferValue, cursor + 1, value)
+			elseif valueType == "Vector3" then
+				buffer.writeu8(bufferValue, cursor, tagVector3)
+				types.Vector3.write(bufferValue, cursor + 1, value)
+			elseif valueType == "Color3" then
+				buffer.writeu8(bufferValue, cursor, tagColor3)
+				types.Color3.write(bufferValue, cursor + 1, value)
+			elseif valueType == "CFrame" then
+				buffer.writeu8(bufferValue, cursor, tagCFrame)
+				types.CFrame.write(bufferValue, cursor + 1, value)
+			else
+				buffer.writeu8(bufferValue, cursor, tagNil)
+			end
+		end,
+		size = 1,
+		getSize = function(value: any)
+			local valueType = typeof(value)
+			if valueType == "boolean" then
+				return 1 + types.bool.getSize(value)
+			elseif valueType == "number" then
+				return 1 + types.f64.getSize(value)
+			elseif valueType == "string" then
+				return 1 + types.string16.getSize(value)
+			elseif valueType == "Vector2" then
+				return 1 + types.Vector2.getSize(value)
+			elseif valueType == "Vector3" then
+				return 1 + types.Vector3.getSize(value)
+			elseif valueType == "Color3" then
+				return 1 + types.Color3.getSize(value)
+			elseif valueType == "CFrame" then
+				return 1 + types.CFrame.getSize(value)
+			end
+
+			return 1
+		end,
+		isFixed = false,
+	}
+end
+
+local function createLayerStateType(driverMapType: any, animationStartTimesType: any)
+	return {
+		read = function(bufferValue: buffer, cursor: number)
+			local drivers = driverMapType.read(bufferValue, cursor)
+			local nextCursor = cursor + driverMapType.getSize(drivers)
+			local animationStartTimes = animationStartTimesType.read(bufferValue, nextCursor)
+			return {
+				Drivers = drivers,
+				AnimationStartTimes = animationStartTimes,
+			}
+		end,
+		write = function(bufferValue: buffer, cursor: number, value: any)
+			local stateValue = if type(value) == "table" then value else {}
+			local drivers = if type(stateValue.Drivers) == "table" then stateValue.Drivers else {}
+			driverMapType.write(bufferValue, cursor, drivers)
+			local nextCursor = cursor + driverMapType.getSize(drivers)
+			local animationStartTimes = if type(stateValue.AnimationStartTimes) == "table" then stateValue.AnimationStartTimes else {}
+			animationStartTimesType.write(bufferValue, nextCursor, animationStartTimes)
+		end,
+		size = 0,
+		getSize = function(value: any)
+			local stateValue = if type(value) == "table" then value else {}
+			local drivers = if type(stateValue.Drivers) == "table" then stateValue.Drivers else {}
+			local animationStartTimes = if type(stateValue.AnimationStartTimes) == "table" then stateValue.AnimationStartTimes else {}
+			return driverMapType.getSize(drivers) + animationStartTimesType.getSize(animationStartTimes)
+		end,
+		isFixed = false,
+	}
+end
+
+local function _createReplicationPacketType(types: any)
+	local driverValueType = createDriverValueType(types)
+	local driverMapType = types.map(types.string16, driverValueType)
+	local animationStartTimesType = types.map(types.string16, types.f64)
+	local layerStateType = createLayerStateType(driverMapType, animationStartTimesType)
+	local layersType = types.map(types.string16, layerStateType)
+	local trackBindingsType = types.optional(types.map(types.string16, types.string16))
+
+	return {
+		read = function(bufferValue: buffer, cursor: number)
+			local timestamp = types.f64.read(bufferValue, cursor)
+			local nextCursor = cursor + types.f64.getSize(timestamp)
+			local drivers = driverMapType.read(bufferValue, nextCursor)
+			nextCursor += driverMapType.getSize(drivers)
+			local layers = layersType.read(bufferValue, nextCursor)
+			nextCursor += layersType.getSize(layers)
+			local trackBindings = trackBindingsType.read(bufferValue, nextCursor)
+			return {
+				Timestamp = timestamp,
+				Drivers = drivers,
+				Layers = layers,
+				TrackBindings = trackBindings,
+			}
+		end,
+		write = function(bufferValue: buffer, cursor: number, value: any)
+			local packetValue = sanitizeReplicationPacket(value)
+			if packetValue == nil then
+				packetValue = {
+					Timestamp = 0,
+					Drivers = {},
+					Layers = {},
+					TrackBindings = nil,
+				}
+			end
+
+			types.f64.write(bufferValue, cursor, packetValue.Timestamp)
+			local nextCursor = cursor + types.f64.getSize(packetValue.Timestamp)
+			driverMapType.write(bufferValue, nextCursor, packetValue.Drivers)
+			nextCursor += driverMapType.getSize(packetValue.Drivers)
+			layersType.write(bufferValue, nextCursor, packetValue.Layers)
+			nextCursor += layersType.getSize(packetValue.Layers)
+			trackBindingsType.write(bufferValue, nextCursor, packetValue.TrackBindings)
+		end,
+		size = 0,
+		getSize = function(value: any)
+			local packetValue = sanitizeReplicationPacket(value)
+			if packetValue == nil then
+				return types.f64.getSize(0)
+					+ driverMapType.getSize({})
+					+ layersType.getSize({})
+					+ trackBindingsType.getSize(nil)
+			end
+
+			return types.f64.getSize(packetValue.Timestamp)
+				+ driverMapType.getSize(packetValue.Drivers)
+				+ layersType.getSize(packetValue.Layers)
+				+ trackBindingsType.getSize(packetValue.TrackBindings)
+		end,
+		isFixed = false,
+	}
+end
+
+local function encodeTargetForSatset(target: ResolvedAnimTarget): { TargetType: string, TargetValue: any }?
+	if target.TargetType == "player" then
+		local player = target.TargetValue
+		if typeof(player) == "Instance" and player:IsA("Player") then
+			return {
+				TargetType = "player",
+				TargetValue = player.UserId,
+			}
+		end
+		if type(player) == "number" then
+			return {
+				TargetType = "player",
+				TargetValue = player,
+			}
+		end
+	elseif target.TargetType == "id" then
+		if type(target.TargetValue) == "string" then
+			return {
+				TargetType = "id",
+				TargetValue = target.TargetValue,
+			}
+		end
+	elseif target.TargetType == "character" then
+		local character = target.TargetValue
+		if typeof(character) == "Instance" and character:IsA("Model") then
+			local player = Players:GetPlayerFromCharacter(character)
+			if player ~= nil then
+				return {
+					TargetType = "player",
+					TargetValue = player.UserId,
+				}
+			end
+
+			local controller = _characterRegistry[character]
+			local id = if controller ~= nil then _controllerIds[controller] else nil
+			if type(id) == "string" then
+				return {
+					TargetType = "id",
+					TargetValue = id,
+				}
+			end
+		end
+	end
+
+	return nil
+end
+
+local function resolveSatsetTarget(targetType: string, targetValue: any): ControllerInstance?
+	if targetType == "player" then
+		if type(targetValue) ~= "number" then
+			return nil
+		end
+
+		local player = Players:GetPlayerByUserId(targetValue)
+		if player == nil then
+			return nil
+		end
+
+		return _registry[player]
+	elseif targetType == "id" then
+		return _registry[targetValue]
+	end
+
+	return nil
+end
+
+local function ensureSatsetTransport()
+	local transport = FluxaSatsetTransport.Get()
+	if transport == nil then
+		return nil
+	end
+
+	if not _satsetInitialized then
+		_satsetInitialized = true
+		_satset = transport.Satset
+		_satsetNPCReplicationPacket = transport.Packets.NPCReplication
+		_satsetAnimCmdPacket = transport.Packets.AnimCmd
+	end
+
+	if not _satsetListenersBound then
+		_satsetListenersBound = true
+		if IS_CLIENT then
+			_satsetNPCReplicationPacket:listen(function(data)
+				if type(data) ~= "table" or type(data.NpcId) ~= "string" then
+					return
+				end
+
+				local controller = _registry[data.NpcId]
+				local applyReplicationPacket = if controller ~= nil then controller.ApplyReplicationPacket else nil
+				if controller ~= nil and applyReplicationPacket ~= nil then
+					applyReplicationPacket(controller, sanitizeReplicationPacket(data.Packet))
+				end
+			end)
+
+			_satsetAnimCmdPacket:listen(function(data)
+				if type(data) ~= "table" then
+					return
+				end
+
+				local targetType = data.TargetType
+				local targetValue = if targetType == "player" then data.TargetValueUserId else data.TargetValueId
+				local controller = resolveSatsetTarget(targetType, targetValue)
+				if controller == nil then
+					return
+				end
+
+				if data.Action == "Play" then
+					local play = controller.Play
+					if play ~= nil then
+						play(controller, data.TrackName, data.FadeTime, data.Weight, data.Speed)
+					end
+				elseif data.Action == "Stop" then
+					local stop = controller.Stop
+					if stop ~= nil then
+						local trackName = if data.TrackName ~= "" then data.TrackName else nil
+						stop(controller, trackName, data.FadeTime)
+					end
+				end
+			end)
+		end
+	end
+
+	return _satset
+end
+
+local function sendNPCPacketToPlayer(player: Player, envelope: NPCPacketEnvelope)
+	if ensureSatsetTransport() ~= nil and _satsetNPCReplicationPacket ~= nil then
+		_satsetNPCReplicationPacket:fireClient(player, {
+			NpcId = envelope.NpcId,
+			Packet = sanitizeReplicationPacket(envelope.Packet),
+		})
+		return
+	end
+
+	local remote = findRemote(FluxaSettings.Get("NPC_REPLICATION_REMOTE", "FluxaService_NPCReplication"))
+	if remote ~= nil then
+		remote:FireClient(player, envelope)
+	end
+end
+
+local function trySendAnimEnvelopeToPlayer(player: Player, envelope: AnimCmdEnvelope): boolean
+	if ensureSatsetTransport() ~= nil and _satsetAnimCmdPacket ~= nil then
+		local encodedTarget = encodeTargetForSatset({
+			TargetType = envelope.TargetType,
+			TargetValue = envelope.TargetValue,
+		})
+		if encodedTarget ~= nil then
+			_satsetAnimCmdPacket:fireClient(player, {
+				Action = envelope.Action,
+				FadeTime = envelope.FadeTime,
+				Speed = envelope.Speed,
+				TargetType = encodedTarget.TargetType,
+				TargetValueId = if encodedTarget.TargetType == "id" then encodedTarget.TargetValue else nil,
+				TargetValueUserId = if encodedTarget.TargetType == "player" then encodedTarget.TargetValue else nil,
+				TrackName = envelope.TrackName,
+				Weight = envelope.Weight,
+			})
+			return true
+		end
+	end
+
+	local remote = getOrCreateRemote(FluxaSettings.Get("ANIM_CMD_REMOTE", "FluxaService_AnimCmd"))
+	remote:FireClient(player, envelope)
+	return false
+end
+
+local function trySendAnimEnvelopeToAll(envelope: AnimCmdEnvelope): boolean
+	if ensureSatsetTransport() ~= nil and _satsetAnimCmdPacket ~= nil then
+		local encodedTarget = encodeTargetForSatset({
+			TargetType = envelope.TargetType,
+			TargetValue = envelope.TargetValue,
+		})
+		if encodedTarget ~= nil then
+			_satsetAnimCmdPacket:fireAllClients({
+				Action = envelope.Action,
+				FadeTime = envelope.FadeTime,
+				Speed = envelope.Speed,
+				TargetType = encodedTarget.TargetType,
+				TargetValueId = if encodedTarget.TargetType == "id" then encodedTarget.TargetValue else nil,
+				TargetValueUserId = if encodedTarget.TargetType == "player" then encodedTarget.TargetValue else nil,
+				TrackName = envelope.TrackName,
+				Weight = envelope.Weight,
+			})
+			return true
+		end
+	end
+
+	local remote = getOrCreateRemote(FluxaSettings.Get("ANIM_CMD_REMOTE", "FluxaService_AnimCmd"))
+	remote:FireAllClients(envelope)
+	return false
+end
+
+getOrCreateRemote = function(name: string): RemoteEvent
 	local existing = ReplicatedStorage:FindFirstChild(name)
 	if existing and existing:IsA("RemoteEvent") then
 		return existing
@@ -57,7 +549,7 @@ local function getOrCreateRemote(name: string): RemoteEvent
 	return found :: RemoteEvent
 end
 
-local function findRemote(name: string): RemoteEvent?
+findRemote = function(name: string): RemoteEvent?
 	local existing = ReplicatedStorage:FindFirstChild(name)
 	if existing and existing:IsA("RemoteEvent") then
 		return existing
@@ -84,7 +576,7 @@ local function disconnectCleanup(id: any)
 end
 
 local function getControllerCharacter(controller: ControllerInstance): Model?
-	local character = controller.Character
+	local character = controller.Character :: any
 	if character ~= nil and character:IsA("Model") then
 		return character
 	end
@@ -371,9 +863,18 @@ local function getPlayerRoot(player)
 	local char = player and player.Character
 	return char and char:FindFirstChild("HumanoidRootPart")
 end
-local function getNPCRoot(entry)
+local function getNPCRoot(entry: NPCEntry): BasePart?
 	local char = entry.Character
-	return char and char:FindFirstChild("HumanoidRootPart")
+	if char == nil then
+		return nil
+	end
+
+	local root = char:FindFirstChild("HumanoidRootPart")
+	if root ~= nil and root:IsA("BasePart") then
+		return root
+	end
+
+	return nil
 end
 local function getLODHz(distance)
 	for _, tier in ipairs(FluxaSettings.Get("LOD_TIERS", {})) do
@@ -385,8 +886,7 @@ local function getLODHz(distance)
 end
 
 local function tickNPCReplication(dt: number)
-	local remote = findRemote(FluxaSettings.Get("NPC_REPLICATION_REMOTE", "FluxaService_NPCReplication"))
-	if remote == nil then
+	if ensureSatsetTransport() == nil and findRemote(FluxaSettings.Get("NPC_REPLICATION_REMOTE", "FluxaService_NPCReplication")) == nil then
 		return
 	end
 
@@ -434,7 +934,7 @@ local function tickNPCReplication(dt: number)
 				acc.lastRate = rate
 				if acc.accum >= (1 / rate) then
 					acc.accum = 0
-					remote:FireClient(player, envelope)
+					sendNPCPacketToPlayer(player, envelope)
 				end
 				_npcPlayerSendAccumulators[npcId][player] = acc
 			end
@@ -459,6 +959,7 @@ function FluxaService.StartNPCReplication(id: string, controller: ControllerInst
 	assert(type(id) == "string" and id ~= "", "FluxaService.StartNPCReplication: id must be a non-empty string")
 	assert(controller ~= nil, "FluxaService.StartNPCReplication: controller cannot be nil")
 
+	ensureSatsetTransport()
 	getOrCreateRemote(FluxaSettings.Get("NPC_REPLICATION_REMOTE", "FluxaService_NPCReplication"))
 	getOrCreateRemote(FluxaSettings.Get("NPC_NOTIFY_REMOTE", "FluxaService_NPCNotify"))
 
@@ -530,7 +1031,7 @@ function FluxaService.PlayOnAll(target: any, trackName: string, options: PlayOpt
 	if isRateLimited(resolved, trackName, options) then
 		return false
 	end
-	getOrCreateRemote(FluxaSettings.Get("ANIM_CMD_REMOTE", "FluxaService_AnimCmd")):FireAllClients(buildPlayEnvelope(resolved, trackName, options))
+	trySendAnimEnvelopeToAll(buildPlayEnvelope(resolved, trackName, options))
 	return true
 end
 
@@ -540,7 +1041,7 @@ function FluxaService.PlayFor(player: Player, target: any, trackName: string, op
 	if isRateLimited(resolved, trackName, options) then
 		return false
 	end
-	getOrCreateRemote(FluxaSettings.Get("ANIM_CMD_REMOTE", "FluxaService_AnimCmd")):FireClient(player, buildPlayEnvelope(resolved, trackName, options))
+	trySendAnimEnvelopeToPlayer(player, buildPlayEnvelope(resolved, trackName, options))
 	return true
 end
 
@@ -551,13 +1052,12 @@ function FluxaService.PlayInRange(position: Vector3, radius: number, target: any
 		return false
 	end
 
-	local remote = getOrCreateRemote(FluxaSettings.Get("ANIM_CMD_REMOTE", "FluxaService_AnimCmd"))
 	local envelope = buildPlayEnvelope(resolved, trackName, options)
 	for _, player in ipairs(Players:GetPlayers()) do
 		local character = player.Character
 		local root = if character ~= nil then character:FindFirstChild("HumanoidRootPart") else nil
 		if root ~= nil and root:IsA("BasePart") and (root.Position - position).Magnitude <= radius then
-			remote:FireClient(player, envelope)
+			trySendAnimEnvelopeToPlayer(player, envelope)
 		end
 	end
 	return true
@@ -566,25 +1066,24 @@ end
 function FluxaService.StopOnAll(target: any, trackName: string?, options: StopOptions?)
 	assert(IS_SERVER, "FluxaService.StopOnAll must be called from the server")
 	local resolved = resolveAnimTarget(target)
-	getOrCreateRemote(FluxaSettings.Get("ANIM_CMD_REMOTE", "FluxaService_AnimCmd")):FireAllClients(buildStopEnvelope(resolved, trackName, options))
+	trySendAnimEnvelopeToAll(buildStopEnvelope(resolved, trackName, options))
 end
 
 function FluxaService.StopFor(player: Player, target: any, trackName: string?, options: StopOptions?)
 	assert(IS_SERVER, "FluxaService.StopFor must be called from the server")
 	local resolved = resolveAnimTarget(target)
-	getOrCreateRemote(FluxaSettings.Get("ANIM_CMD_REMOTE", "FluxaService_AnimCmd")):FireClient(player, buildStopEnvelope(resolved, trackName, options))
+	trySendAnimEnvelopeToPlayer(player, buildStopEnvelope(resolved, trackName, options))
 end
 
 function FluxaService.StopInRange(position: Vector3, radius: number, target: any, trackName: string?, options: StopOptions?)
 	assert(IS_SERVER, "FluxaService.StopInRange must be called from the server")
 	local resolved = resolveAnimTarget(target)
 	local envelope = buildStopEnvelope(resolved, trackName, options)
-	local remote = getOrCreateRemote(FluxaSettings.Get("ANIM_CMD_REMOTE", "FluxaService_AnimCmd"))
 	for _, player in ipairs(Players:GetPlayers()) do
 		local character = player.Character
 		local root = if character ~= nil then character:FindFirstChild("HumanoidRootPart") else nil
 		if root ~= nil and root:IsA("BasePart") and (root.Position - position).Magnitude <= radius then
-			remote:FireClient(player, envelope)
+			trySendAnimEnvelopeToPlayer(player, envelope)
 		end
 	end
 end
@@ -640,6 +1139,10 @@ if IS_CLIENT then
 	end)
 
 	task.spawn(function()
+		if ensureSatsetTransport() ~= nil then
+			return
+		end
+
 		local remote = ReplicatedStorage:WaitForChild(FluxaSettings.Get("NPC_REPLICATION_REMOTE", "FluxaService_NPCReplication"), 10)
 		if remote == nil or not remote:IsA("RemoteEvent") then
 			return
@@ -659,6 +1162,10 @@ if IS_CLIENT then
 	end)
 
 	task.spawn(function()
+		if ensureSatsetTransport() ~= nil then
+			return
+		end
+
 		local remote = ReplicatedStorage:WaitForChild(FluxaSettings.Get("ANIM_CMD_REMOTE", "FluxaService_AnimCmd"), 10)
 		if remote == nil or not remote:IsA("RemoteEvent") then
 			return
