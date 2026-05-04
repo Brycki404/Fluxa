@@ -859,6 +859,7 @@ local function notifyPlayersAboutNpc(eventName: "added" | "removed", npcId: stri
 end
 
 local _npcPlayerSendAccumulators = {} -- [npcId][player] = {accum = 0, lastRate = 10}
+local _npcLastSentPackets = {} -- [npcId][player] = packet
 local function getPlayerRoot(player)
 	local char = player and player.Character
 	return char and char:FindFirstChild("HumanoidRootPart")
@@ -883,6 +884,39 @@ local function getLODHz(distance)
 		end
 	end
 	return 1
+end
+
+-- Ignore root Timestamp so packet time alone does not force a send.
+local function deepEqual(a: any, b: any, isRoot: boolean): boolean
+	if a == b then
+		return true
+	end
+
+	if type(a) ~= "table" or type(b) ~= "table" then
+		return false
+	end
+
+	for k, v in pairs(a) do
+		if isRoot and k == "Timestamp" then
+			continue
+		end
+
+		if not deepEqual(v, b[k], false) then
+			return false
+		end
+	end
+
+	for k in pairs(b) do
+		if isRoot and k == "Timestamp" then
+			continue
+		end
+
+		if a[k] == nil then
+			return false
+		end
+	end
+
+	return true
 end
 
 local function tickNPCReplication(dt: number)
@@ -934,7 +968,13 @@ local function tickNPCReplication(dt: number)
 				acc.lastRate = rate
 				if acc.accum >= (1 / rate) then
 					acc.accum = 0
-					sendNPCPacketToPlayer(player, envelope)
+					_npcLastSentPackets[npcId] = _npcLastSentPackets[npcId] or {}
+					local lastPacket = _npcLastSentPackets[npcId][player]
+					local changed = not deepEqual(envelope.Packet, lastPacket, true)
+					if changed then
+						sendNPCPacketToPlayer(player, envelope)
+						_npcLastSentPackets[npcId][player] = envelope.Packet
+					end
 				end
 				_npcPlayerSendAccumulators[npcId][player] = acc
 			end
@@ -986,6 +1026,8 @@ function FluxaService.StopNPCReplication(id: string)
 	assert(IS_SERVER, "FluxaService.StopNPCReplication must be called from the server")
 
 	_npcEntries[id] = nil
+	_npcPlayerSendAccumulators[id] = nil
+	_npcLastSentPackets[id] = nil
 	FluxaService.UnregisterController(id)
 	notifyPlayersAboutNpc("removed", id, nil)
 
