@@ -487,6 +487,31 @@ local function hasAnimationStartTimes(packet)
 	return false
 end
 
+local function quantizePacket(packet)
+	local factor = 10 ^ FluxaSettings.Get("DRIVER_QUANTIZE_PRECISION", 3)
+	local function quantizeTable(t)
+		if type(t) ~= "table" then
+			return t
+		end
+		local result = {}
+		for k, v in pairs(t) do
+			if type(v) == "number" then
+				result[k] = if v == v and v ~= math.huge and v ~= -math.huge
+					then math.round(v * factor) / factor
+					else v
+			elseif type(v) == "table" then
+				result[k] = quantizeTable(v)
+			else
+				result[k] = v
+			end
+		end
+		return result
+	end
+	local result = quantizeTable(packet)
+	result.Timestamp = packet.Timestamp -- preserve exact timestamp
+	return result
+end
+
 local function buildLocalPacket(includeAnimationStartTimes, includeTrackBindings)
 	if _localController == nil or _localController.GetReplicationPacket == nil then
 		return nil
@@ -703,28 +728,77 @@ function ReplicationService.StartLocalReplication(controller, replicationMode: R
 				return
 			end
 
-			-- Delta compression: only send if any leaf value changed
-			local function deepEqual(a, b)
-				if a == b then
-					return true
-				end
-				if type(a) ~= "table" or type(b) ~= "table" then
-					return false
-				end
+			packet = quantizePacket(packet)
+
+			-- Compares TrackBindings shallowly: checks both key presence and binding ID value.
+			local function trackBindingsEqual(a, b)
+				if a == b then return true end
+				if type(a) ~= "table" or type(b) ~= "table" then return false end
 				for k, v in pairs(a) do
-					if not deepEqual(v, b[k]) then
+					if b[k] ~= v then
+						print("[FluxaReplication] TrackBindings changed: " .. tostring(k) .. " (" .. tostring(b[k]) .. " -> " .. tostring(v) .. ")")
 						return false
 					end
 				end
 				for k in pairs(b) do
 					if a[k] == nil then
+						print("[FluxaReplication] TrackBindings removed: " .. tostring(k))
 						return false
 					end
 				end
 				return true
 			end
 
-			local changed = not deepEqual(packet, _lastSentPacket)
+			-- Delta compression: only send if any leaf value changed.
+			-- Timestamp is excluded: it always differs but is not a signal of state change.
+			-- TrackBindings: if absent from packet, skip. If present, compare against
+			-- the controller's authoritative _trackBindings (not _lastSentPacket which may be stale).
+			local function deepEqual(a, b, isRoot, path)
+				if a == b then
+					return true
+				end
+				if type(a) ~= "table" or type(b) ~= "table" then
+					local delta = (type(a) == "number" and type(b) == "number")
+						and (" (delta: " .. tostring(a - b) .. ")")
+						or (" (" .. tostring(b) .. " -> " .. tostring(a) .. ")")
+					print("[FluxaReplication] changed: " .. (path or "?") .. delta)
+					return false
+				end
+				for k, v in pairs(a) do
+					if isRoot and k == "Timestamp" then
+						continue
+					end
+					if isRoot and k == "TrackBindings" then
+						-- Compare against the controller's authoritative bindings, not _lastSentPacket.
+						-- _lastSentPacket.TrackBindings may be stale or nil if it wasn't included last tick.
+						local controllerBindings = (_localController and _localController._trackBindings) or {}
+						if not trackBindingsEqual(v, controllerBindings) then
+							return false
+						end
+						continue
+					end
+					if not deepEqual(v, b[k], false, (path or "") .. "." .. tostring(k)) then
+						return false
+					end
+				end
+				for k in pairs(b) do
+					if isRoot and k == "Timestamp" then
+						continue
+					end
+					-- TrackBindings absence in new packet = "not sending this tick", not a removal.
+					-- The set-equality check above already handles additions/removals when present.
+					if isRoot and k == "TrackBindings" then
+						continue
+					end
+					if a[k] == nil then
+						print("[FluxaReplication] key removed: " .. (path or "") .. "." .. tostring(k))
+						return false
+					end
+				end
+				return true
+			end
+
+			local changed = not deepEqual(packet, _lastSentPacket, true, "")
 
 			if changed then
 				sendPacketToServer(packet)

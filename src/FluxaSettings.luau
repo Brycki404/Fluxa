@@ -36,6 +36,10 @@ Settings.ANIMATION_START_TIMES_INTERVAL = 0.25
 -- its bindings as dirty, and also on a slow heartbeat so late-joining peers
 -- recover within ~1s even if they miss the dirty packet.
 Settings.TRACK_BINDINGS_SYNC_INTERVAL = 1.0
+-- Number of decimal places to round numeric driver values to before comparing.
+-- Reduces spurious sends from floating-point drift (e.g. aim pitch).
+-- 3 = 0.001 precision (~0.057 degrees for radian angles).
+Settings.DRIVER_QUANTIZE_PRECISION = 3
 -- Add more shared settings here as needed
 
 
