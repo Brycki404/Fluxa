@@ -10,7 +10,7 @@ local FluxaSatsetTransport = {}
 local _satset = nil
 local _initialized = false
 local _transport = nil
-local _satsetDemoEnabledAtStartup = Workspace:GetAttribute("SatSetDemo") == true
+local _satsetDemoEnabledAtStartup = FluxaSettings.Get("SATSET_ENABLED", false) == true
 
 local function isSatsetDemoEnabled()
 	return _satsetDemoEnabledAtStartup
@@ -25,8 +25,7 @@ local function tryGetSatset()
 		return _satset
 	end
 
-	local shared = ReplicatedFirst:FindFirstChild("Shared")
-	local satsetModule = if shared ~= nil then shared:FindFirstChild("Satset") else nil
+	local satsetModule = script.Parent:FindFirstChild("Satset_v0.2.0")
 	if satsetModule == nil or not satsetModule:IsA("ModuleScript") then
 		_satset = false
 		return nil

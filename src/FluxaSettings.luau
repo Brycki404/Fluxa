@@ -17,6 +17,7 @@ Settings.DEFAULT_PLAY_RATE_LIMIT_WINDOW = 0.05
 
 -- Fluxa Replication Service settings
 Settings.REMOTE_EVENT_NAME = "FluxaReplication"
+Settings.SATSET_ENABLED = true
 Settings.SATSET_RELIABLE = true
 Settings.SATSET_CLIENT_PACKET_NAME = "FluxaReplication_ClientToServer"
 Settings.SATSET_SERVER_PACKET_NAME = "FluxaReplication_ServerToClient"
