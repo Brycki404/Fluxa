@@ -24,6 +24,8 @@ Settings.SATSET_SERVER_PACKET_NAME = "FluxaReplication_ServerToClient"
 Settings.SATSET_GUARD_MAX_TOKENS = 60
 Settings.SATSET_GUARD_REFILL_RATE = 30
 Settings.SATSET_GUARD_STUDIO_BYPASS = true
+Settings.SATSET_RELIABLE_THRESHOLD = 60000 -- Segmentation for stability
+Settings.SATSET_MAX_PACKETS_PER_FRAME = 0 -- No frame-spreading
 -- LOD send rates (Hz) by distance (studs)
 Settings.LOD_TIERS = {
 	{ dist = 20, rate = 20 },   -- 0-20 studs: 20 Hz

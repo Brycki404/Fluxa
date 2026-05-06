@@ -237,10 +237,14 @@ function FluxaSatsetTransport.Get()
 		local ok, result = pcall(function()
 			satset.start({
 				guard = {
-					maxTokens = FluxaSettings.Get("SATSET_GUARD_MAX_TOKENS", 60),
-					refillRate = FluxaSettings.Get("SATSET_GUARD_REFILL_RATE", 30),
-					studioBypass = FluxaSettings.Get("SATSET_GUARD_STUDIO_BYPASS", true),
-				},
+					maxTokens = FluxaSettings.Get("SATSET_GUARD_MAX_TOKENS", 60);
+					refillRate = FluxaSettings.Get("SATSET_GUARD_REFILL_RATE", 30);
+					studioBypass = FluxaSettings.Get("SATSET_GUARD_STUDIO_BYPASS", true);
+				};
+				batching = {
+					reliableThreshold = FluxaSettings.Get("SATSET_RELIABLE_THRESHOLD", 60000);
+					maxPacketsPerFrame = FluxaSettings.Get("SATSET_MAX_PACKETS_PER_FRAME", 0);
+				};
 			})
 
 			local types = satset.Types
