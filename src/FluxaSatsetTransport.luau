@@ -1,8 +1,4 @@
 --!nonstrict
-
-local ReplicatedFirst = game:GetService("ReplicatedFirst")
-local Workspace = game:GetService("Workspace")
-
 local FluxaSettings = require(script.Parent.FluxaSettings)
 
 local FluxaSatsetTransport = {}
