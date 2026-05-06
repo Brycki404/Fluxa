@@ -10,11 +10,12 @@ local BASE_WALK_SPEED = 3
 local MAX_RUN_SPEED = 24
 local MOMENTUM_BUILD_RATE = 0.8
 local NPC_WANDER_RADIUS = 36
-local SERVER_NPC_COUNT = 0
+local SERVER_NPC_COUNT = 20
 local SERVER_NPC_SPACING = 12
 local SERVER_NPC_TEMPLATE_NAME = "ServerNPC"
 local FLUXA_NPC_TAG = "FluxaNPC"
 local FLUXA_NPC_ID_ATTRIBUTE = "FluxaNPCId"
+local NPC_WAIT_AFTER_REACHING_DESTINATION = 10 --0.75
 
 -- No FluxaController needed on the server for NPCs
 local function startRandomWalkLoop(record)
@@ -53,7 +54,7 @@ local function startRandomWalkLoop(record)
 			if not reached then
 				task.wait(0.25)
 			else
-				task.wait(math.random() * 0.75 + 0.25)
+				task.wait(math.random() * NPC_WAIT_AFTER_REACHING_DESTINATION + 0.25)
 			end
 		end
 	end)
