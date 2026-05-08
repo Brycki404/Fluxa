@@ -55,15 +55,17 @@ function AnimationTrack.new(asset: any, options: AnimationTrackOptions?): Animat
 	self.FadeInTime = if options and options.FadeInTime ~= nil then options.FadeInTime else 0.2
 	self.FadeOutTime = if options and options.FadeOutTime ~= nil then options.FadeOutTime else 0.2
 	self.Weight = 0
+	self.FadedWeight = 0
 	self.IsPlaying = false
 	self.Stopped = Signal.new()
 	self.Ended = Signal.new()
 	self.DidLoop = Signal.new()
 	self.KeyframeReached = Signal.new()
+	self.FadeWeight = 0
 	self._FadeDir = 0
 	self._ActiveFadeInTime = self.FadeInTime
 	self._ActiveFadeOutTime = self.FadeOutTime
-	self._PlayTargetWeight = 1
+	self._PendingFadeOut = false
 	self._MarkerSignals = {}
 	self._StoppedFired = false
 	self._EndedFired = false
@@ -83,7 +85,7 @@ function AnimationTrack.Play(self: AnimationTrackInstance, fadeInTime: number?, 
 	local resolvedFadeIn = if fadeInTime ~= nil then fadeInTime else self.FadeInTime
 	local resolvedWeight = if weight ~= nil then math.clamp(weight, 0, 1) else 1
 	self._ActiveFadeInTime = resolvedFadeIn
-	self._PlayTargetWeight = resolvedWeight
+	self.Weight = resolvedWeight
 	if speed ~= nil then
 		self.Speed = speed
 	end
@@ -92,27 +94,31 @@ function AnimationTrack.Play(self: AnimationTrackInstance, fadeInTime: number?, 
 	self.TimePosition = 0
 	self._StoppedFired = false
 	self._EndedFired = false
+	self._PendingFadeOut = false
 	if resolvedFadeIn <= 0 then
-		self.Weight = resolvedWeight
+		self.FadeWeight = 1
+		self.FadedWeight = self.Weight
 		self._FadeDir = 0
 	else
-		self.Weight = 0
+		self.FadeWeight = 0
+		self.FadedWeight = 0
 		self._FadeDir = 1
 	end
 end
 
 function AnimationTrack.Stop(self: AnimationTrackInstance, fadeOutTime: number?)
-	if self.Weight <= 0 and self._FadeDir == 0 then
+	if self.FadedWeight <= 0 and self._FadeDir == 0 then
 		return
 	end
 	self.IsPlaying = false
-	local resolvedFadeOut = if fadeOutTime ~= nil then fadeOutTime else 0
+	local resolvedFadeOut = if fadeOutTime ~= nil then fadeOutTime else self.FadeOutTime
 	self._ActiveFadeOutTime = resolvedFadeOut
 	emitStopped(self)
 
-	if resolvedFadeOut <= 0 or self.Weight <= 0 then
+	if resolvedFadeOut <= 0 or self.FadedWeight <= 0 then
 		self._FadeDir = 0
-		self.Weight = 0
+		self.FadeWeight = 0
+		self.FadedWeight = 0
 		emitEnded(self)
 	else
 		self._FadeDir = -1
@@ -162,33 +168,40 @@ end
 
 function AnimationTrack.Update(self: AnimationTrackInstance, dt: number)
 	-- Looped tracks always advance time. Non-looped skip if there is no fade activity.
-	if not self.Looped and self.Weight <= 0 and self._FadeDir == 0 then
+	if not self.Looped and self.FadedWeight <= 0 and self._FadeDir == 0 then
 		return { Transforms = {}, Curves = {} }
 	end
 
 	-- Advance fade weight
 	if self._FadeDir == 1 then
-		self.Weight = if self._ActiveFadeInTime > 0
-			then math.min(self._PlayTargetWeight, self.Weight + dt / self._ActiveFadeInTime)
-			else self._PlayTargetWeight
-		if self.Weight >= self._PlayTargetWeight then
+		self.FadeWeight = if self._ActiveFadeInTime > 0
+			then math.min(1, self.FadeWeight + dt / self._ActiveFadeInTime)
+			else 1
+		if self.FadeWeight >= 1 then
 			self._FadeDir = 0
+			if self._PendingFadeOut then
+				self._PendingFadeOut = false
+				self._FadeDir = -1
+			end
 		end
 	elseif self._FadeDir == -1 then
-		self.Weight = if self._ActiveFadeOutTime > 0
-			then math.max(0, self.Weight - dt / self._ActiveFadeOutTime)
+		self.FadeWeight = if self._ActiveFadeOutTime > 0
+			then math.max(0, self.FadeWeight - dt / self._ActiveFadeOutTime)
 			else 0
-		if self.Weight <= 0 then
+		if self.FadeWeight <= 0 then
 			self._FadeDir = 0
-			self.Weight = 0
+			self.FadeWeight = 0
+			self.FadedWeight = 0
 			emitEnded(self)
 			return { Transforms = {}, Curves = {} }
 		end
 	end
+	self.FadedWeight = self.Weight * self.FadeWeight
 
 	if not self.Asset or not self.Asset.GetLength then
 		self._FadeDir = 0
-		self.Weight = 0
+		self.FadeWeight = 0
+		self.FadedWeight = 0
 		emitStopped(self)
 		emitEnded(self)
 		return { Transforms = {}, Curves = {} }
@@ -221,11 +234,13 @@ function AnimationTrack.Update(self: AnimationTrackInstance, dt: number)
 	elseif newTime >= duration then
 		self.Time = duration
 		fireMarkerSignals(self, previousTime, duration)
-		-- Fade out on natural completion instead of instant stop.
-		if self._FadeDir ~= -1 then
-			emitStopped(self)
+		-- Natural completion: if still fading in, defer the fade-out until fade-in finishes.
+		if self._FadeDir == 1 then
+			self._PendingFadeOut = true
+		elseif self._FadeDir == 0 then
 			self._FadeDir = -1
 		end
+		emitStopped(self)
 	else
 		self.Time = newTime
 		fireMarkerSignals(self, previousTime, self.Time)

@@ -300,33 +300,20 @@ end
 
 local function blendLayerTracksIntoPose(controller: ControllerInstance, finalPose: PoseData, layerName: string, layer: LayerState, dt: number)
 	for _, trackName in ipairs(controller._trackNames) do
-		local track = controller._tracks[trackName]
-		if track.Layer ~= layerName then
+		local trackState = controller._tracks[trackName]
+		if trackState.Layer ~= layerName then
 			continue
 		end
 
-		local logicalWeight = controller._smoothedTrackWeights[trackName] or 0
-		local sample
-		local effectiveWeight = 0
+		local track = trackState.Track
 
-		-- Update runs as long as the track is logically playing or still has smoothed weight
-		-- (so fade-outs driven by the smoothed target complete naturally).
-		if not track.Track.IsPlaying and logicalWeight <= 0 then
+		if not track.IsPlaying and track.FadedWeight <= 0 and track._FadeDir == 0 then
 			continue
 		end
 
-		sample = track.Track:Update(dt)
+		local sample = track:Update(dt)
 
-		if track.Track.Looped then
-			effectiveWeight = logicalWeight
-		else
-			effectiveWeight = logicalWeight * track.Track.Weight
-			if effectiveWeight <= 0 then
-				continue
-			end
-		end
-
-		local combinedWeight = clamp01(effectiveWeight * layer.Weight)
+		local combinedWeight = clamp01(track.FadedWeight * layer.Weight)
 		if combinedWeight <= 0 then
 			continue
 		end
@@ -369,7 +356,7 @@ function FluxaController.new(options: NewControllerOptions): ControllerInstance
 	local self = setmetatable({}, FluxaController) :: any
 	self.Character = options.Character
 	self.AutoApplyPose = if options.AutoApplyPose ~= nil then options.AutoApplyPose else true
-	self.WeightSmoothingSpeed = if options.WeightSmoothingSpeed ~= nil then options.WeightSmoothingSpeed else 12
+	self.WeightSmoothingSpeed = if options.WeightSmoothingSpeed ~= nil then options.WeightSmoothingSpeed else 6 -- 12
 	self.OnPreStep = options.OnPreStep
 	self.OnPostStep = options.OnPostStep
 	self.OnPostBlend = options.OnPostBlend
@@ -764,7 +751,7 @@ function FluxaController.ApplyReplicationPacket(self: ControllerInstance, packet
 							(track :: any).Time = 0
 						end
 					else
-						if track.Weight <= 0 then
+						if track.FadedWeight <= 0 then
 							track:Play(0)
 						end
 
@@ -862,7 +849,7 @@ function FluxaController.LoadTrack(self: ControllerInstance, name: string, asset
 		-- When a non-looped track naturally completes, clear IsPlaying and zero the target
 		-- so the controller does not treat it as wanting to play next frame.
 		local capturedName = name
-		self._loopConnections[capturedName] = track.Ended:Connect(function()
+		self._loopConnections[capturedName] = track.Stopped:Connect(function()
 			if self._trackTargets[capturedName] ~= nil then
 				self._trackTargets[capturedName] = 0
 				local state = self._tracks[capturedName]
@@ -871,6 +858,7 @@ function FluxaController.LoadTrack(self: ControllerInstance, name: string, asset
 				end
 			end
 		end)
+		-- TODO: I'm not sure if I want to keep this or not... but without it, if a non-looped track is loaded with a target weight > 0, it won't start playing until something like :Play() is called.  Maybe that's fine?  It does allow for more explicit control over when the track starts, but it also means that simply loading a track with a weight isn't enough to get it going.  For now, I'll keep it and we can revisit if it causes issues or confusion.
 		if self._trackTargets[name] > 0 then
 			beginTrackPlayback(self, name, self._tracks[name], track.FadeInTime)
 		end
@@ -886,19 +874,35 @@ function FluxaController.SetTrackAsset(self: ControllerInstance, name: string, a
 	local preservePhase = getTrackSwapPreservePhase(options)
 	local previousNormalizedPhase = nil
 	local previousWasPlaying = false
+	local mergedTrackOptions: {[string]: any}? = nil
 
 	if previousTrackState ~= nil then
 		local previousTrack = previousTrackState.Track
 		previousWasPlaying = previousTrack.IsPlaying
+		mergedTrackOptions = {
+			Looped = previousTrack.Looped,
+			Speed = previousTrack.Speed,
+			FadeInTime = previousTrack.FadeInTime,
+			FadeOutTime = previousTrack.FadeOutTime,
+		}
 		if preservePhase then
 			previousNormalizedPhase = getTrackNormalizedPhase(previousTrack)
+		end
+	end
+
+	if options ~= nil and options.TrackOptions ~= nil then
+		if mergedTrackOptions == nil then
+			mergedTrackOptions = {}
+		end
+		for key, value in pairs(options.TrackOptions :: {[string]: any}) do
+			mergedTrackOptions[key] = value
 		end
 	end
 
 	local trackConfig: TrackConfig = {
 		Asset = asset,
 		BindingId = if options ~= nil then options.BindingId else nil,
-		TrackOptions = if options ~= nil and options.TrackOptions ~= nil then options.TrackOptions else nil,
+		TrackOptions = mergedTrackOptions,
 	}
 
 	local nextTrack = self:LoadTrack(name, asset, trackConfig)
@@ -927,7 +931,7 @@ function FluxaController.UnloadTrack(self: ControllerInstance, name: string)
 
 	local track = self._tracks[name]
 	if track then
-		if track.Track.Weight > 0 then
+		if track.Track.FadedWeight > 0 then
 			track.Track:Stop(0)
 		end
 		if (track.Track :: any).Destroy ~= nil then
@@ -1051,28 +1055,7 @@ function FluxaController.Play(self: ControllerInstance, trackName: string, fadeI
 
 	local targetWeight = if weight ~= nil then clamp01(weight) else 1
 	self._trackTargets[trackName] = targetWeight
-	track.Track.IsPlaying = true
-
-	if track.Track.Looped then
-		if speed ~= nil then
-			track.Track:AdjustSpeed(speed)
-		end
-		if fadeInTime ~= nil and fadeInTime <= 0 then
-			self._smoothedTrackWeights[trackName] = targetWeight
-		end
-		if shouldTrackAutoReplicate(track) then
-			self:MarkLayerAnimationStart(track.Layer, trackName)
-		end
-		if track.Track.Weight <= 0 then
-			track.Track:Play(0, 0, speed)
-		end
-		return
-	end
-
-	if fadeInTime ~= nil and fadeInTime <= 0 then
-		self._smoothedTrackWeights[trackName] = targetWeight
-	end
-	beginTrackPlayback(self, trackName, track :: TrackState, fadeInTime, weight, speed)
+	beginTrackPlayback(self, trackName, track :: TrackState, fadeInTime, targetWeight, speed)
 end
 
 function FluxaController.Stop(self: ControllerInstance, trackName: string, fadeOutTime: number?)
@@ -1082,11 +1065,6 @@ function FluxaController.Stop(self: ControllerInstance, trackName: string, fadeO
 	end
 
 	self._trackTargets[trackName] = 0
-	track.Track.IsPlaying = false
-	if track.Track.Looped then
-		-- Target is now 0; _smoothedTrackWeights will decay to 0 via Step smoothing.
-		return
-	end
 	track.Track:Stop(fadeOutTime)
 end
 
@@ -1115,12 +1093,7 @@ function FluxaController.Step(self: ControllerInstance, dt: number): PoseData
 			speed = self.WeightSmoothingSpeed
 		end
 		self._smoothedTrackWeights[trackName] = current + (target - current) * clamp01(dt * speed)
-
-		if track.Track.Looped then
-			-- Drive the looped track's contribution weight from smoothed targets.
-			-- IsPlaying = false means the track is disabled; zero its weight immediately.
-			track.Track.Weight = if track.Track.IsPlaying then self._smoothedTrackWeights[trackName] else 0
-		end
+		track.Track.Weight = self._smoothedTrackWeights[trackName]
 	end
 
 	local finalPose: PoseData = {}
@@ -1151,7 +1124,7 @@ end
 
 function FluxaController.Destroy(self: ControllerInstance)
 	for _, track in pairs(self._tracks) do
-		if track.Track.Weight > 0 then
+		if track.Track.FadedWeight > 0 then
 			track.Track:Stop(0)
 		end
 		if (track.Track :: any).Destroy ~= nil then
@@ -1164,7 +1137,6 @@ function FluxaController.Destroy(self: ControllerInstance)
 	table.clear(self._tracks)
 	table.clear(self._trackNames)
 	table.clear(self._trackTargets)
-	table.clear(self._smoothedTrackWeights)
 	table.clear(self._blendTrees)
 	table.clear(self._trackBindings)
 	self._trackBindingsDirty = false

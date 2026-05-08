@@ -30,7 +30,6 @@ local SHIFT_KEY = Enum.KeyCode.C
 local SPEED_SMOOTH_SPEED = 10
 local LAND_RETRIGGER_COOLDOWN = 0.12
 local LAND_FADE_HALF_SPEED = 9
-local LAND_LAYER_WEIGHT_SMOOTH_SPEED = 12
 local LAND_WEIGHT_SPEED_EASE_POWER = 1.5
 local MAX_TURN_LEAN_DEG = 14
 local TURN_LEAN_SENSITIVITY = 0.2
@@ -43,8 +42,6 @@ local CLIMB_MAX_CYCLE_RATE = 1.8
 local MAX_DELTA_AIM_PITCH_DEG = 65
 local MAX_AIM_PITCH_DEG = 65
 local MIN_AIM_PITCH_DEG = -65
-local AIM_PITCH_RISE_SPEED = 12
-local AIM_PITCH_FADE_SPEED = 2.5
 local AIM_PITCH_SMOOTH_SPEED = 14
 local FLUXA_NPC_TAG = "FluxaNPC"
 local FLUXA_NPC_ID_ATTRIBUTE = "FluxaNPCId"
@@ -340,29 +337,29 @@ local function createHumanoidStateDriver(controller, humanoid, flushPacket, conn
 			if flushPacket then
 				flushPacket()
 			end
-			controller:Stop("Land", 0.2)
-			controller:Stop("Fall", 0.2)
-			controller:Stop("Climb", 0.2)
+			controller:Stop("Land")
+			controller:Stop("Fall")
+			controller:Stop("Climb")
 		elseif new == Enum.HumanoidStateType.Freefall then
 			wasAirborne = setBaseBlend(controller, "WasAirborne", true)
 			airState = setBaseState(controller, "Fall")
 			controller:MarkLayerAnimationStart("Base", "Fall")
 			controller:Play("Fall")
-			controller:Stop("Jump", 0.2)
-			controller:Stop("Land", 0.2)
-			controller:Stop("Climb", 0.2)
+			controller:Stop("Jump")
+			controller:Stop("Land")
+			controller:Stop("Climb")
 		elseif new == Enum.HumanoidStateType.Climbing then
 			airState = setBaseState(controller, "Climb")
 			wasAirborne = setBaseBlend(controller, "WasAirborne", false)
 			controller:MarkLayerAnimationStart("Base", "Climb")
 			controller:Play("Climb")
-			controller:Stop("Fall", 0.2)
-			controller:Stop("Jump", 0.2)
-			controller:Stop("Land", 0.2)
+			controller:Stop("Fall")
+			controller:Stop("Jump")
+			controller:Stop("Land")
 		elseif new == Enum.HumanoidStateType.Landed then
-			controller:Stop("Fall", 0.2)
-			controller:Stop("Jump", 0.2)
-			controller:Stop("Climb", 0.2)
+			controller:Stop("Fall")
+			controller:Stop("Jump")
+			controller:Stop("Climb")
 
 			local canTriggerLand = wasAirborne and (now - lastLandTriggerTime) >= LAND_RETRIGGER_COOLDOWN
 			if canTriggerLand then
@@ -379,9 +376,9 @@ local function createHumanoidStateDriver(controller, humanoid, flushPacket, conn
 				wasAirborne = setBaseBlend(controller, "WasAirborne", false)
 			end
 		elseif new == Enum.HumanoidStateType.Running or new == Enum.HumanoidStateType.RunningNoPhysics then
-			controller:Stop("Fall", 0.2)
-			controller:Stop("Jump", 0.2)
-			controller:Stop("Climb", 0.2)
+			controller:Stop("Fall")
+			controller:Stop("Jump")
+			controller:Stop("Climb")
 			if airState ~= "Jump" and airState ~= "Fall" then
 				airState = setBaseState(controller, "Ground")
 				wasAirborne = setBaseBlend(controller, "WasAirborne", false)
@@ -410,27 +407,27 @@ local function createNPCStateDriver(controller, humanoid, root, connectFn)
 			wasAirborne = false
 			controller:MarkLayerAnimationStart("Base", "Climb")
 			controller:Play("Climb")
-			controller:Stop("Fall", 0.2)
-			controller:Stop("Jump", 0.2)
-			controller:Stop("Land", 0.2)
+			controller:Stop("Fall")
+			controller:Stop("Jump")
+			controller:Stop("Land")
 		elseif not grounded then
 			if not wasAirborne then
 				wasAirborne = true
 				airState = setBaseState(controller, "Fall")
 				controller:MarkLayerAnimationStart("Base", "Fall")
 				controller:Play("Fall")
-				controller:Stop("Jump", 0.2)
-				controller:Stop("Land", 0.2)
-				controller:Stop("Climb", 0.2)
+				controller:Stop("Jump")
+				controller:Stop("Land")
+				controller:Stop("Climb")
 			end
 		elseif jumping then
 			wasAirborne = true
 			airState = setBaseState(controller, "Jump")
 			controller:MarkLayerAnimationStart("Base", "Jump")
 			controller:Play("Jump")
-			controller:Stop("Land", 0.2)
-			controller:Stop("Fall", 0.2)
-			controller:Stop("Climb", 0.2)
+			controller:Stop("Land")
+			controller:Stop("Fall")
+			controller:Stop("Climb")
 		else
 			if wasAirborne then
 				local canTriggerLand = (now - lastLandTriggerTime) >= LAND_RETRIGGER_COOLDOWN
@@ -546,14 +543,11 @@ local function createFluxaController(character: Model, bindingSetManager, isLoca
 		"Head",
 	}
 
-	local attackTrack = nil
 	local landTrack = nil
 	local slowWalkTrack = nil
 	local walkTrack = nil
 	local runTrack = nil
 	local climbTrack = nil
-	local attackPoseInfluence = 0
-	local landingWeightSmoothed = 0
 	local smoothedAimPitch = 0
 	local lastObservedBaseState = "Ground"
 	local trackConfigs = {
@@ -563,9 +557,10 @@ local function createFluxaController(character: Model, bindingSetManager, isLoca
 		SlowWalk = { Layer = "Base", AutoReplicate = true, PreservePhaseOnSwap = true, TrackOptions = { Looped = true, Speed = 1, FadeInTime = 0.2, FadeOutTime = 0.24 } },
 		Jump = { Layer = "Base", AutoReplicate = true, ReplicationSeekMode = "Never", TrackOptions = { Looped = false, Speed = 1, FadeInTime = 0.08, FadeOutTime = 0.16 } },
 		Fall = { Layer = "Base", AutoReplicate = true, TrackOptions = { Looped = true, Speed = 1, FadeInTime = 0.14, FadeOutTime = 0.18 } },
-		Land = { Layer = "Landing", AutoReplicate = true, ReplicationSeekMode = "Never", TrackOptions = { Looped = false, Speed = 1, FadeInTime = 0.08, FadeOutTime = 0.08 } },
+		Land = { Layer = "Landing", AutoReplicate = true, ReplicationSeekMode = "Never", TrackOptions = { Looped = false, Speed = 1, FadeInTime = 0.08, FadeOutTime = 0.8 } },
 		Climb = { Layer = "Base", AutoReplicate = true, PreservePhaseOnSwap = true, TrackOptions = { Looped = true, Speed = 1, FadeInTime = 0.18, FadeOutTime = 0.22 } },
-		Attack = { Layer = "UpperBody", AutoReplicate = true, ReplicationSeekMode = "Never",  TrackOptions = { Looped = false, Speed = 1, FadeInTime = 0.08, FadeOutTime = 0.14 } },
+		Attack = { Layer = "UpperBody", AutoReplicate = true, ReplicationSeekMode = "Never",  TrackOptions = { Looped = false, Speed = 1, FadeInTime = 0.08, FadeOutTime = 0.4 } },
+		-- 0.08 and 0.14
 	}
 
 	-- NPC controllers are serverowned, so we don't need to replicate them here
@@ -609,50 +604,32 @@ local function createFluxaController(character: Model, bindingSetManager, isLoca
 				local speedAlpha = getLandMovingSpeedAlpha(smoothedPlanarSpeed)
 				landingWeight = math.clamp(1 - math.pow(speedAlpha, LAND_WEIGHT_SPEED_EASE_POWER), 0, 1)
 			end
-			landingWeightSmoothed += (landingWeight - landingWeightSmoothed) * math.clamp(dt * LAND_LAYER_WEIGHT_SMOOTH_SPEED, 0, 1)
-			innerController:SetLayerWeight("Landing", landingWeightSmoothed)
+			innerController:SetTrackWeight("Land", landingWeight)
+			innerController:SetLayerWeight("Landing", 1)
 
 			if not isNPCController then
 				if isLocalController then
 					local rawAimPitch = math.clamp(getLayerBlend(innerController, "UpperBody", "AimPitchInput", 0), -1, 1)
 					smoothedAimPitch += (rawAimPitch - smoothedAimPitch) * math.clamp(dt * AIM_PITCH_SMOOTH_SPEED, 0, 1)
 
-					local isAttackPlaying = attackTrack and attackTrack.IsPlaying
-					local targetInfluence = 0
-					if isAttackPlaying then
-						local trackWeight = math.clamp(attackTrack.Weight, 0, 1)
-						if trackWeight <= 0 and attackPoseInfluence <= 0 then
-							targetInfluence = math.max(targetInfluence, math.min(1, dt * AIM_PITCH_RISE_SPEED))
-						end
-						targetInfluence = math.max(targetInfluence, trackWeight)
+					local smoothedTrackWeights = (innerController :: any)._smoothedTrackWeights
+					local smoothedAttackWeight = 0
+					if type(smoothedTrackWeights) == "table" then
+						smoothedAttackWeight = math.clamp(smoothedTrackWeights.Attack or 0, 0, 1)
 					end
 
-					if targetInfluence > attackPoseInfluence then
-						attackPoseInfluence = math.min(targetInfluence, attackPoseInfluence + dt * AIM_PITCH_RISE_SPEED)
-					else
-						attackPoseInfluence = math.max(targetInfluence, attackPoseInfluence - dt * AIM_PITCH_FADE_SPEED)
-					end
-
-					if isAttackPlaying then
+					if smoothedAttackWeight > 1e-4 then
 						innerController:SetLayerDriver("UpperBody", "State", "Attack")
 					else
 						innerController:SetLayerDriver("UpperBody", "State", "Idle")
 					end
-					innerController:SetLayerDriver("UpperBody", "AttackInfluence", attackPoseInfluence)
 					innerController:SetLayerDriver("UpperBody", "AimPitch", smoothedAimPitch)
 				else
 					local replicatedAimPitch = math.clamp(getLayerBlend(innerController, "UpperBody", "AimPitch", 0), -1, 1)
 					smoothedAimPitch += (replicatedAimPitch - smoothedAimPitch) * math.clamp(dt * AIM_PITCH_SMOOTH_SPEED, 0, 1)
-
-					local targetAttackInfluence = math.clamp(getLayerBlend(innerController, "UpperBody", "AttackInfluence", 0), 0, 1)
-					if targetAttackInfluence > attackPoseInfluence then
-						attackPoseInfluence = math.min(targetAttackInfluence, attackPoseInfluence + dt * AIM_PITCH_RISE_SPEED)
-					else
-						attackPoseInfluence = math.max(targetAttackInfluence, attackPoseInfluence - dt * AIM_PITCH_FADE_SPEED)
-					end
 				end
 
-				innerController:SetLayerWeight("UpperBody", attackPoseInfluence)
+				innerController:SetLayerWeight("UpperBody", 1)
 			end
 		end,
 		OnPostBlend = function(innerController, finalPose, dt)
@@ -673,8 +650,13 @@ local function createFluxaController(character: Model, bindingSetManager, isLoca
 			end
 
 			if not isNPCController then
+				local smoothedTrackWeights = (innerController :: any)._smoothedTrackWeights
+				local aimPitchWeight = 0
+				if type(smoothedTrackWeights) == "table" then
+					aimPitchWeight = math.clamp(smoothedTrackWeights.Attack or 0, 0, 1)
+				end
+
 				-- Complementary weighting: AimPitch vs LookAt
-				local aimPitchWeight = attackPoseInfluence
 				local lookAtWeight = 1 - aimPitchWeight
 
 				-- AimPitch effect (as before, but weighted)
@@ -820,7 +802,7 @@ local function createFluxaController(character: Model, bindingSetManager, isLoca
 		Layers = {
 			Base = { Weight = 1, Order = 0 },
 			Landing = { Weight = 0, Order = 1 },
-			UpperBody = { Weight = 0, Order = 2, Mask = upperBodyMask },
+			UpperBody = { Weight = 1, Order = 2, Mask = upperBodyMask },
 		},
 	})
 
@@ -838,7 +820,6 @@ local function createFluxaController(character: Model, bindingSetManager, isLoca
 	setBaseBlend(controller, "Speed", 0)
 	setBaseBlend(controller, "Direction", Vector3.zero)
 	setBaseBlend(controller, "Moving", false)
-	setBaseBlend(controller, "AttackInfluence", 0)
 	setBaseBlend(controller, "AimPitch", 0)
 	setBaseBlend(controller, "AimPitchInput", 0)
 	-- Global drivers for LookCamPitch and LookCamYawRel (for remote player aiming)
@@ -857,8 +838,6 @@ local function createFluxaController(character: Model, bindingSetManager, isLoca
 			runTrack = track
 		elseif trackName == "SlowWalk" then
 			slowWalkTrack = track
-		elseif trackName == "Attack" then
-			attackTrack = track
 		elseif trackName == "Land" then
 			landTrack = track
 		elseif trackName == "Climb" then
