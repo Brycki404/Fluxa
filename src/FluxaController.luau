@@ -267,7 +267,7 @@ local function blendPoseOverride(target: PoseData, incoming: PoseData, weight: n
 			continue
 		end
 
-		local existing = target[joint]
+		local existing = target[joint] :: CFrame?
 		if existing then
 			target[joint] = existing:Lerp(cf, alpha)
 		else
@@ -289,7 +289,7 @@ local function blendPoseAdditive(target: PoseData, incoming: PoseData, weight: n
 		end
 
 		local delta = CFrame.new():Lerp(cf, alpha)
-		local existing = target[joint]
+		local existing = target[joint] :: CFrame?
 		if existing then
 			target[joint] = existing * delta
 		else
@@ -1056,7 +1056,7 @@ function FluxaController.Play(self: ControllerInstance, trackName: string, fadeI
 	if fadeInTime ~= nil and fadeInTime <= 0 then
 		self._smoothedTrackWeights[trackName] = targetWeight
 	end
-	beginTrackPlayback(self, trackName, track, fadeInTime, weight, speed)
+	beginTrackPlayback(self, trackName, track :: TrackState, fadeInTime, weight, speed)
 end
 
 function FluxaController.Stop(self: ControllerInstance, trackName: string, fadeOutTime: number?)
@@ -1103,7 +1103,7 @@ function FluxaController.Step(self: ControllerInstance, dt: number): PoseData
 					track.Track:Stop(track.Track.FadeOutTime)
 				end
 			elseif not track.Track.IsPlaying then
-				beginTrackPlayback(self, trackName, track, track.Track.FadeInTime)
+				beginTrackPlayback(self, trackName, track :: TrackState, track.Track.FadeInTime)
 			end
 		end
 	end

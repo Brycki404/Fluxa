@@ -108,7 +108,7 @@ export type LayerState = {
 export type TrackState = {
 	Name: string,
 	Layer: string,
-	Track: any,
+	Track: AnimationTrackInstance,
 	AutoReplicate: boolean,
 	ReplicationSeekMode: ReplicationSeekMode,
 }
