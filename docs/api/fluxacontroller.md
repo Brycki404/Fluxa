@@ -25,7 +25,6 @@ Passed as values in the `Tracks` table when constructing a controller.
 | `BindingId` | `string?` | `asset.Name` or track name | Stable replicated binding identifier for this track |
 | `TrackOptions` | `{[string]: any}?` | `nil` | Options passed directly to `AnimationTrack.new` |
 | `Layer` | `string` | `"Base"` | Layer this track belongs to |
-| `AutoManage` | `boolean` | `true` | Controller auto-plays/stops based on weight |
 | `AutoReplicate` | `boolean` | `false` | If true, starting this track auto-emits replication start markers |
 | `InitialWeight` | `number` | `0` | Initial target weight for this track |
 | `ReplicationSeekMode` | `string?` | `nil` | `"Always"`, `"LoopingOnly"`, or `"Never"` |
@@ -217,7 +216,7 @@ Reassigns a track to a different layer.
 
 Enables or disables automatic animation-start replication for a track.
 
-When enabled, any start through `Play(...)` or `AutoManage` start automatically records a replication start marker.
+When enabled, any start through `Play(...)` automatically records a replication start marker.
 
 #### `controller:SetTrackWeight(trackName, weight)` / `controller:GetTrackWeight(trackName)`
 
@@ -246,7 +245,7 @@ end
 
 #### `controller:GetPlayingTracks()`
 
-Returns all tracks whose `Weight` is greater than zero. This includes tracks that are fading in, at full weight, or fading out.
+Returns all tracks where `IsPlaying` is `true`. This includes tracks actively playing or fading in. Tracks that have been explicitly stopped (and are fading out) are **not** included since `Stop()` clears `IsPlaying` immediately.
 
 Returns: `{ AnimationTrackInstance }`
 
@@ -255,7 +254,7 @@ Tracks are returned in registration order (the order they were added to the cont
 ```lua
 local playing = controller:GetPlayingTracks()
 for _, track in ipairs(playing) do
-    print(track.Asset.Name, track.Weight)
+    print(track.Asset.Name, track.IsPlaying)
 end
 ```
 
@@ -263,7 +262,7 @@ end
 
 #### `controller:Play(trackName, fadeInTime?, weight?, speed?)`
 
-Plays a named track with an optional fade-in time. Resets the track's time position to `0`.
+Plays a named track with an optional fade-in time. Resets the track's time position to `0` and sets `IsPlaying` to `true`.
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
@@ -274,7 +273,7 @@ Plays a named track with an optional fade-in time. Resets the track's time posit
 
 #### `controller:Stop(trackName, fadeOutTime?)`
 
-Stops a named track with an optional fade-out time.
+Stops a named track with an optional fade-out time. Sets `IsPlaying` to `false` immediately, before the fade completes.
 
 #### `controller:StopAll(fadeOutTime?)`
 
@@ -370,8 +369,8 @@ end
 
 * Tracks assigned to non-existent layers are silently dropped. Always define layers before registering tracks that reference them.
 * Blend tree functions are resolved in layer order (by `Order` value, ascending). Lower-order layers blend first.
-* Non-looped tracks (`Looped = false`) stop automatically after playing once. Their weight fades out at the track's `FadeOutTime`.
-* `AutoManage = true` tracks are played and stopped automatically when their blend-tree-computed weight becomes nonzero or returns to zero. `AutoManage = false` tracks are only played or stopped via explicit `:Play` and `:Stop` calls.
+* Looped tracks (`Looped = true` in `TrackOptions`) are warm-started at load time. `IsPlaying` acts as a master enable/disable gate above blend tree weights — a stopped looped track contributes nothing to the final pose even if the blend tree returns a non-zero weight. Call `:Play(...)` to re-enable it after a `:Stop(...)`.
+* Non-looped tracks (`Looped = false`) only play when explicitly triggered via `:Play(...)`. They stop automatically after one playthrough — `IsPlaying` is auto-cleared to `false` on natural completion — and their weight fades out at the track's `FadeOutTime`.
 * Driver replication is opt-out per driver (default `true`) and can be configured up front with `GlobalDriverReplication` and `LayerDriverReplication`.
 * Track start replication is opt-in per track (`AutoReplicate = true`) or manual through `MarkLayerAnimationStart`.
 * `FluxaController` creates one `UniversalJointWriter.BuildJointMap` per controller. If the character's joint hierarchy changes after construction (unlikely at runtime), you may need to recreate the controller.

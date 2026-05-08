@@ -10,10 +10,6 @@ type AnimationTrackInstance = FluxaTypes.AnimationTrackInstance
 type AnimationTrackOptions = FluxaTypes.AnimationTrackOptions
 type SignalType = FluxaTypes.SignalType
 
-local function setPlaying(self: AnimationTrackInstance, isPlaying: boolean)
-	self.IsPlaying = isPlaying
-end
-
 local function emitStopped(self: AnimationTrackInstance)
 	if self._StoppedFired then
 		return
@@ -91,7 +87,7 @@ function AnimationTrack.Play(self: AnimationTrackInstance, fadeInTime: number?, 
 	if speed ~= nil then
 		self.Speed = speed
 	end
-	setPlaying(self, true)
+	self.IsPlaying = true
 	self.Time = 0
 	self.TimePosition = 0
 	self._StoppedFired = false
@@ -106,16 +102,15 @@ function AnimationTrack.Play(self: AnimationTrackInstance, fadeInTime: number?, 
 end
 
 function AnimationTrack.Stop(self: AnimationTrackInstance, fadeOutTime: number?)
-	if not self.IsPlaying and self.Weight <= 0 then
+	if self.Weight <= 0 and self._FadeDir == 0 then
 		return
 	end
-
+	self.IsPlaying = false
 	local resolvedFadeOut = if fadeOutTime ~= nil then fadeOutTime else 0
 	self._ActiveFadeOutTime = resolvedFadeOut
 	emitStopped(self)
 
 	if resolvedFadeOut <= 0 or self.Weight <= 0 then
-		setPlaying(self, false)
 		self._FadeDir = 0
 		self.Weight = 0
 		emitEnded(self)
@@ -166,7 +161,8 @@ function AnimationTrack.Destroy(self: AnimationTrackInstance)
 end
 
 function AnimationTrack.Update(self: AnimationTrackInstance, dt: number)
-	if not self.IsPlaying then
+	-- Looped tracks always advance time. Non-looped skip if there is no fade activity.
+	if not self.Looped and self.Weight <= 0 and self._FadeDir == 0 then
 		return { Transforms = {}, Curves = {} }
 	end
 
@@ -183,7 +179,6 @@ function AnimationTrack.Update(self: AnimationTrackInstance, dt: number)
 			then math.max(0, self.Weight - dt / self._ActiveFadeOutTime)
 			else 0
 		if self.Weight <= 0 then
-			setPlaying(self, false)
 			self._FadeDir = 0
 			self.Weight = 0
 			emitEnded(self)
@@ -192,7 +187,6 @@ function AnimationTrack.Update(self: AnimationTrackInstance, dt: number)
 	end
 
 	if not self.Asset or not self.Asset.GetLength then
-		setPlaying(self, false)
 		self._FadeDir = 0
 		self.Weight = 0
 		emitStopped(self)

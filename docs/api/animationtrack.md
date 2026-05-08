@@ -29,7 +29,7 @@ The object returned by `AnimationTrack.new`.
 | `TimePosition` | `number` | Alias for `Time` (Roblox compatibility) |
 | `Speed` | `number` | Playback speed multiplier |
 | `Looped` | `boolean` | Whether the track loops |
-| `IsPlaying` | `boolean` | True while the track is active |
+| `IsPlaying` | `boolean` | `true` when the track is logically enabled. Set to `true` by `Play()`, set to `false` immediately by `Stop()`. For non-looped tracks managed by a `FluxaController`, also auto-cleared on natural completion. |
 | `Weight` | `number` | Current blend weight (smoothed by fade envelopes) |
 | `FadeInTime` | `number` | Fade-in duration in seconds |
 | `FadeOutTime` | `number` | Fade-out duration in seconds |
@@ -62,7 +62,6 @@ Creates a new `AnimationTrackInstance`.
 | `Looped` | `boolean` | `true` | Whether the track loops |
 | `FadeInTime` | `number` | `0.2` | Default fade-in duration |
 | `FadeOutTime` | `number` | `0.2` | Default fade-out duration |
-| `Weight` | `number` | `1` | Initial target weight |
 
 Returns: `AnimationTrackInstance`
 
@@ -70,7 +69,7 @@ Returns: `AnimationTrackInstance`
 
 #### `track:Play(fadeInTime?, weight?, speed?)`
 
-Starts playback. Resets `Time` to `0` and sets `IsPlaying` to `true`.
+Starts playback. Resets `Time` to `0` and immediately sets `IsPlaying` to `true`.
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
@@ -88,9 +87,9 @@ Stops playback and begins the fade-out envelope.
 |-----------|------|---------|-------------|
 | `fadeOutTime` | `number?` | `0` | Fade-out duration in seconds |
 
-If the track is not playing and its weight is already at or below zero, `Stop` returns immediately without firing signals.
+Sets `IsPlaying` to `false` immediately, then begins the fade-out envelope. If the track's weight is already at or below zero and there is no active fade, `Stop` returns immediately without firing signals.
 
-`Stopped` fires synchronously in `Stop()`. `Ended` fires once weight reaches zero — either immediately (if `fadeOutTime` is `0`) or at the end of the next `Update` call that drives weight to zero.
+`Stopped` fires synchronously in `Stop()`. `Ended` fires once weight reaches zero — either immediately (if `fadeOutTime` is `0`) or at the end of the next `Update` call that drives weight to zero. Note that `IsPlaying` is `false` for the entire duration of the fade-out.
 
 #### `track:Update(dt)`
 
@@ -174,6 +173,7 @@ Play() called          Stop() called or animation naturally reaches end
 
 * `Stopped` fires at the moment fade-out begins — the track is still potentially contributing weight until `Ended` fires.
 * `Ended` fires when the track weight has reached zero and the clip is fully blended out.
+* `IsPlaying` is set to `false` immediately when `Stop()` is called, *before* the weight ramp completes. The track may continue fading out (weight > 0) while `IsPlaying = false`.
 * Both guard flags reset on the next `Play()` call, so they fire again on subsequent play/stop cycles.
 
 #### DidLoop
@@ -228,6 +228,11 @@ end
 
 `Weight` starts at `0` when a track is constructed. Calling `Play(fadeInTime)` ramps it toward the target weight (`_PlayTargetWeight`) over `fadeInTime` seconds. Calling `Stop(fadeOutTime)` ramps it back to `0` over `fadeOutTime` seconds.
 
-While weight is ramping, `IsPlaying` remains `true`. `IsPlaying` only becomes `false` after the weight has fully reached zero and `Ended` has fired.
+`IsPlaying` is an explicit enable/disable flag that is independent of the weight envelope:
+
+* `Play()` sets `IsPlaying = true` immediately, before the fade-in starts.
+* `Stop()` sets `IsPlaying = false` immediately, before the fade-out completes.
+
+This means a track can be fading out (weight > 0, `_FadeDir = -1`) while `IsPlaying = false`. `FluxaController` uses this distinction to gate looped track contribution — a stopped looped track contributes nothing to the final pose even while its weight is still ramping down.
 
 > In the raw API pattern (Examples 1 and 2), `Weight` must be read back each frame to build a weighted blend. In `FluxaController`, blend weights are computed by the layer's blend tree and applied automatically.

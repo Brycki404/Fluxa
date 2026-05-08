@@ -309,20 +309,21 @@ local function blendLayerTracksIntoPose(controller: ControllerInstance, finalPos
 		local sample
 		local effectiveWeight = 0
 
+		-- Update runs as long as the track is logically playing or still has smoothed weight
+		-- (so fade-outs driven by the smoothed target complete naturally).
+		if not track.Track.IsPlaying and logicalWeight <= 0 then
+			continue
+		end
+
+		sample = track.Track:Update(dt)
+
 		if track.Track.Looped then
-			-- Looped tracks stay warm: always advance time, while logical blend weight drives contribution.
-			sample = track.Track:Update(dt)
 			effectiveWeight = logicalWeight
 		else
-			if logicalWeight <= 0 then
-				continue
-			end
 			effectiveWeight = logicalWeight * track.Track.Weight
 			if effectiveWeight <= 0 then
 				continue
 			end
-			-- Non-looped tracks still use track fade weight as part of effective influence.
-			sample = track.Track:Update(dt)
 		end
 
 		local combinedWeight = clamp01(effectiveWeight * layer.Weight)
@@ -753,7 +754,7 @@ function FluxaController.ApplyReplicationPacket(self: ControllerInstance, packet
 
 					if not track.Looped then
 						-- Always restart non-looped tracks from the beginning when a new start time arrives.
-						if track.IsPlaying then
+						if track.Weight > 0 then
 							track:Stop(0)
 						end
 						track:Play(0)
@@ -763,7 +764,7 @@ function FluxaController.ApplyReplicationPacket(self: ControllerInstance, packet
 							(track :: any).Time = 0
 						end
 					else
-						if not track.IsPlaying then
+						if track.Weight <= 0 then
 							track:Play(0)
 						end
 
@@ -857,8 +858,22 @@ function FluxaController.LoadTrack(self: ControllerInstance, name: string, asset
 				end
 			end)
 		end
-	elseif self._trackTargets[name] > 0 then
-		beginTrackPlayback(self, name, self._tracks[name], track.FadeInTime)
+	else
+		-- When a non-looped track naturally completes, clear IsPlaying and zero the target
+		-- so the controller does not treat it as wanting to play next frame.
+		local capturedName = name
+		self._loopConnections[capturedName] = track.Ended:Connect(function()
+			if self._trackTargets[capturedName] ~= nil then
+				self._trackTargets[capturedName] = 0
+				local state = self._tracks[capturedName]
+				if state then
+					state.Track.IsPlaying = false
+				end
+			end
+		end)
+		if self._trackTargets[name] > 0 then
+			beginTrackPlayback(self, name, self._tracks[name], track.FadeInTime)
+		end
 	end
 
 	return track
@@ -874,7 +889,7 @@ function FluxaController.SetTrackAsset(self: ControllerInstance, name: string, a
 
 	if previousTrackState ~= nil then
 		local previousTrack = previousTrackState.Track
-		previousWasPlaying = previousTrack.IsPlaying == true
+		previousWasPlaying = previousTrack.IsPlaying
 		if preservePhase then
 			previousNormalizedPhase = getTrackNormalizedPhase(previousTrack)
 		end
@@ -912,7 +927,7 @@ function FluxaController.UnloadTrack(self: ControllerInstance, name: string)
 
 	local track = self._tracks[name]
 	if track then
-		if track.Track.IsPlaying then
+		if track.Track.Weight > 0 then
 			track.Track:Stop(0)
 		end
 		if (track.Track :: any).Destroy ~= nil then
@@ -994,7 +1009,7 @@ function FluxaController.GetPlayingTracks(self: ControllerInstance): { any }
 	local result = {}
 	for _, trackName in ipairs(self._trackNames) do
 		local state = self._tracks[trackName]
-		if state and state.Track.Weight > 0 then
+		if state and state.Track.IsPlaying then
 			table.insert(result, state.Track)
 		end
 	end
@@ -1036,6 +1051,7 @@ function FluxaController.Play(self: ControllerInstance, trackName: string, fadeI
 
 	local targetWeight = if weight ~= nil then clamp01(weight) else 1
 	self._trackTargets[trackName] = targetWeight
+	track.Track.IsPlaying = true
 
 	if track.Track.Looped then
 		if speed ~= nil then
@@ -1047,7 +1063,7 @@ function FluxaController.Play(self: ControllerInstance, trackName: string, fadeI
 		if shouldTrackAutoReplicate(track) then
 			self:MarkLayerAnimationStart(track.Layer, trackName)
 		end
-		if not track.Track.IsPlaying then
+		if track.Track.Weight <= 0 then
 			track.Track:Play(0, 0, speed)
 		end
 		return
@@ -1066,6 +1082,7 @@ function FluxaController.Stop(self: ControllerInstance, trackName: string, fadeO
 	end
 
 	self._trackTargets[trackName] = 0
+	track.Track.IsPlaying = false
 	if track.Track.Looped then
 		-- Target is now 0; _smoothedTrackWeights will decay to 0 via Step smoothing.
 		return
@@ -1090,21 +1107,19 @@ function FluxaController.Step(self: ControllerInstance, dt: number): PoseData
 		local track = self._tracks[trackName]
 		local target = resolvedWeights[trackName] or 0
 		local current = self._smoothedTrackWeights[trackName] or 0
-		self._smoothedTrackWeights[trackName] = current + (target - current) * clamp01(dt * self.WeightSmoothingSpeed)
+		local speed: number
+		if not track.Track.Looped then
+			local fadeTime = if target > current then track.Track.FadeInTime else track.Track.FadeOutTime
+			speed = if fadeTime and fadeTime > 0 then (1 / fadeTime) else self.WeightSmoothingSpeed
+		else
+			speed = self.WeightSmoothingSpeed
+		end
+		self._smoothedTrackWeights[trackName] = current + (target - current) * clamp01(dt * speed)
 
 		if track.Track.Looped then
-			if not track.Track.IsPlaying then
-				track.Track:Play(0, 0)
-			end
-			track.Track.Weight = self._smoothedTrackWeights[trackName]
-		else
-			if target <= 0 then
-				if track.Track.IsPlaying then
-					track.Track:Stop(track.Track.FadeOutTime)
-				end
-			elseif not track.Track.IsPlaying then
-				beginTrackPlayback(self, trackName, track :: TrackState, track.Track.FadeInTime)
-			end
+			-- Drive the looped track's contribution weight from smoothed targets.
+			-- IsPlaying = false means the track is disabled; zero its weight immediately.
+			track.Track.Weight = if track.Track.IsPlaying then self._smoothedTrackWeights[trackName] else 0
 		end
 	end
 
@@ -1136,7 +1151,7 @@ end
 
 function FluxaController.Destroy(self: ControllerInstance)
 	for _, track in pairs(self._tracks) do
-		if track.Track.IsPlaying then
+		if track.Track.Weight > 0 then
 			track.Track:Stop(0)
 		end
 		if (track.Track :: any).Destroy ~= nil then

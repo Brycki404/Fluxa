@@ -548,58 +548,49 @@ local function createFluxaController(character: Model, assets, isLocalController
 	loadTrackFromBinding("Idle", {
 		BindingId = "Idle",
 		Layer = "Base",
-		AutoManage = true,
 		InitialWeight = 1,
 		TrackOptions = { Looped = true, Speed = 1, FadeInTime = 0.2, FadeOutTime = 0.2 },
 	})
 	loadTrackFromBinding("Walk", {
 		BindingId = "Walk",
 		Layer = "Base",
-		AutoManage = true,
 		TrackOptions = { Looped = true, Speed = 1, FadeInTime = 0.2, FadeOutTime = 0.2 },
 	})
 	loadTrackFromBinding("Run", {
 		BindingId = "Run",
 		Layer = "Base",
-		AutoManage = true,
 		TrackOptions = { Looped = true, Speed = 1, FadeInTime = 0.18, FadeOutTime = 0.2 },
 	})
 	loadTrackFromBinding("SlowWalk", {
 		BindingId = "SlowWalk",
 		Layer = "Base",
-		AutoManage = true,
 		TrackOptions = { Looped = true, Speed = 1, FadeInTime = 0.2, FadeOutTime = 0.24 },
 	})
 	loadTrackFromBinding("Jump", {
 		BindingId = "Jump",
 		Layer = "Base",
-		AutoManage = false,
 		ReplicationSeekMode = "Never",
 		TrackOptions = { Looped = false, Speed = 1, FadeInTime = 0.08, FadeOutTime = 0.16 },
 	})
 	loadTrackFromBinding("Fall", {
 		BindingId = "Fall",
 		Layer = "Base",
-		AutoManage = true,
 		TrackOptions = { Looped = true, Speed = 1, FadeInTime = 0.14, FadeOutTime = 0.18 },
 	})
 	loadTrackFromBinding("Land", {
 		BindingId = "Land",
 		Layer = "Landing",
-		AutoManage = false,
 		ReplicationSeekMode = "Never",
 		TrackOptions = { Looped = false, Speed = 1, FadeInTime = 0.08, FadeOutTime = 0.08 },
 	})
 	loadTrackFromBinding("Climb", {
 		BindingId = "Climb",
 		Layer = "Base",
-		AutoManage = true,
 		TrackOptions = { Looped = true, Speed = 1, FadeInTime = 0.18, FadeOutTime = 0.22 },
 	})
 	loadTrackFromBinding("Attack", {
 		BindingId = "Attack",
 		Layer = "UpperBody",
-		AutoManage = false,
 		InitialWeight = 0,
 		ReplicationSeekMode = "Never",
 		TrackOptions = { Looped = false, Speed = 1, FadeInTime = 0.08, FadeOutTime = 0.14 },

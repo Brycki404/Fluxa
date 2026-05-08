@@ -557,15 +557,15 @@ local function createFluxaController(character: Model, bindingSetManager, isLoca
 	local smoothedAimPitch = 0
 	local lastObservedBaseState = "Ground"
 	local trackConfigs = {
-		Idle = { Layer = "Base", AutoManage = true, AutoReplicate = true, InitialWeight = 1, TrackOptions = { Looped = true, Speed = 1, FadeInTime = 0.2, FadeOutTime = 0.2 } },
-		Walk = { Layer = "Base", AutoManage = true, AutoReplicate = true, PreservePhaseOnSwap = true, TrackOptions = { Looped = true, Speed = 1, FadeInTime = 0.2, FadeOutTime = 0.2 } },
-		Run = { Layer = "Base", AutoManage = true, AutoReplicate = true, PreservePhaseOnSwap = true, TrackOptions = { Looped = true, Speed = 1, FadeInTime = 0.18, FadeOutTime = 0.2 } },
-		SlowWalk = { Layer = "Base", AutoManage = true, AutoReplicate = true, PreservePhaseOnSwap = true, TrackOptions = { Looped = true, Speed = 1, FadeInTime = 0.2, FadeOutTime = 0.24 } },
-		Jump = { Layer = "Base", AutoManage = false, AutoReplicate = true, ReplicationSeekMode = "Never", TrackOptions = { Looped = false, Speed = 1, FadeInTime = 0.08, FadeOutTime = 0.16 } },
-		Fall = { Layer = "Base", AutoManage = true, AutoReplicate = true, TrackOptions = { Looped = true, Speed = 1, FadeInTime = 0.14, FadeOutTime = 0.18 } },
-		Land = { Layer = "Landing", AutoManage = false, AutoReplicate = true, InitialWeight = 1, ReplicationSeekMode = "Never", TrackOptions = { Looped = false, Speed = 1, FadeInTime = 0.08, FadeOutTime = 0.08 } },
-		Climb = { Layer = "Base", AutoManage = true, AutoReplicate = true, PreservePhaseOnSwap = true, TrackOptions = { Looped = true, Speed = 1, FadeInTime = 0.18, FadeOutTime = 0.22 } },
-		Attack = { Layer = "UpperBody", AutoManage = false, AutoReplicate = true, InitialWeight = 1, ReplicationSeekMode = "Never",  TrackOptions = { Looped = false, Speed = 1, FadeInTime = 0.08, FadeOutTime = 0.14 } },
+		Idle = { Layer = "Base", AutoReplicate = true, InitialWeight = 1, TrackOptions = { Looped = true, Speed = 1, FadeInTime = 0.2, FadeOutTime = 0.2 } },
+		Walk = { Layer = "Base", AutoReplicate = true, PreservePhaseOnSwap = true, TrackOptions = { Looped = true, Speed = 1, FadeInTime = 0.2, FadeOutTime = 0.2 } },
+		Run = { Layer = "Base", AutoReplicate = true, PreservePhaseOnSwap = true, TrackOptions = { Looped = true, Speed = 1, FadeInTime = 0.18, FadeOutTime = 0.2 } },
+		SlowWalk = { Layer = "Base", AutoReplicate = true, PreservePhaseOnSwap = true, TrackOptions = { Looped = true, Speed = 1, FadeInTime = 0.2, FadeOutTime = 0.24 } },
+		Jump = { Layer = "Base", AutoReplicate = true, ReplicationSeekMode = "Never", TrackOptions = { Looped = false, Speed = 1, FadeInTime = 0.08, FadeOutTime = 0.16 } },
+		Fall = { Layer = "Base", AutoReplicate = true, TrackOptions = { Looped = true, Speed = 1, FadeInTime = 0.14, FadeOutTime = 0.18 } },
+		Land = { Layer = "Landing", AutoReplicate = true, ReplicationSeekMode = "Never", TrackOptions = { Looped = false, Speed = 1, FadeInTime = 0.08, FadeOutTime = 0.08 } },
+		Climb = { Layer = "Base", AutoReplicate = true, PreservePhaseOnSwap = true, TrackOptions = { Looped = true, Speed = 1, FadeInTime = 0.18, FadeOutTime = 0.22 } },
+		Attack = { Layer = "UpperBody", AutoReplicate = true, ReplicationSeekMode = "Never",  TrackOptions = { Looped = false, Speed = 1, FadeInTime = 0.08, FadeOutTime = 0.14 } },
 	}
 
 	-- NPC controllers are serverowned, so we don't need to replicate them here

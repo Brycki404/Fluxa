@@ -345,15 +345,15 @@ local function createFluxaController(character: Model, bindingSetManager, isLoca
 	local lastObservedBaseState = "Ground"
 	local rifleEquipped = false
 	local swapTrackConfigs = {
-		Idle = { Layer = "Base", AutoManage = true, InitialWeight = 1, TrackOptions = { Looped = true, Speed = 1, FadeInTime = 0.2, FadeOutTime = 0.2 } },
-		Walk = { Layer = "Base", AutoManage = true, PreservePhaseOnSwap = true, TrackOptions = { Looped = true, Speed = 1, FadeInTime = 0.2, FadeOutTime = 0.2 } },
-		Run = { Layer = "Base", AutoManage = true, PreservePhaseOnSwap = true, TrackOptions = { Looped = true, Speed = 1, FadeInTime = 0.18, FadeOutTime = 0.2 } },
-		SlowWalk = { Layer = "Base", AutoManage = true, PreservePhaseOnSwap = true, TrackOptions = { Looped = true, Speed = 1, FadeInTime = 0.2, FadeOutTime = 0.24 } },
-		Jump = { Layer = "Base", AutoManage = false, ReplicationSeekMode = "Never", TrackOptions = { Looped = false, Speed = 1, FadeInTime = 0.08, FadeOutTime = 0.16 } },
-		Fall = { Layer = "Base", AutoManage = true, TrackOptions = { Looped = true, Speed = 1, FadeInTime = 0.14, FadeOutTime = 0.18 } },
-		Land = { Layer = "Landing", AutoManage = false, ReplicationSeekMode = "Never", TrackOptions = { Looped = false, Speed = 1, FadeInTime = 0.08, FadeOutTime = 0.08 } },
-		Climb = { Layer = "Base", AutoManage = true, PreservePhaseOnSwap = true, TrackOptions = { Looped = true, Speed = 1, FadeInTime = 0.18, FadeOutTime = 0.22 } },
-		Attack = { Layer = "UpperBody", AutoManage = false, InitialWeight = 0, PreservePhaseOnSwap = false, ReplicationSeekMode = "Never", TrackOptions = { Looped = false, Speed = 1, FadeInTime = 0.08, FadeOutTime = 0.14 } },
+		Idle = { Layer = "Base", InitialWeight = 1, TrackOptions = { Looped = true, Speed = 1, FadeInTime = 0.2, FadeOutTime = 0.2 } },
+		Walk = { Layer = "Base", PreservePhaseOnSwap = true, TrackOptions = { Looped = true, Speed = 1, FadeInTime = 0.2, FadeOutTime = 0.2 } },
+		Run = { Layer = "Base", PreservePhaseOnSwap = true, TrackOptions = { Looped = true, Speed = 1, FadeInTime = 0.18, FadeOutTime = 0.2 } },
+		SlowWalk = { Layer = "Base", PreservePhaseOnSwap = true, TrackOptions = { Looped = true, Speed = 1, FadeInTime = 0.2, FadeOutTime = 0.24 } },
+		Jump = { Layer = "Base", ReplicationSeekMode = "Never", TrackOptions = { Looped = false, Speed = 1, FadeInTime = 0.08, FadeOutTime = 0.16 } },
+		Fall = { Layer = "Base", TrackOptions = { Looped = true, Speed = 1, FadeInTime = 0.14, FadeOutTime = 0.18 } },
+		Land = { Layer = "Landing", ReplicationSeekMode = "Never", TrackOptions = { Looped = false, Speed = 1, FadeInTime = 0.08, FadeOutTime = 0.08 } },
+		Climb = { Layer = "Base", PreservePhaseOnSwap = true, TrackOptions = { Looped = true, Speed = 1, FadeInTime = 0.18, FadeOutTime = 0.22 } },
+		Attack = { Layer = "UpperBody", InitialWeight = 0, PreservePhaseOnSwap = false, ReplicationSeekMode = "Never", TrackOptions = { Looped = false, Speed = 1, FadeInTime = 0.08, FadeOutTime = 0.14 } },
 	}
 
 	local controller = FluxaController.new({
