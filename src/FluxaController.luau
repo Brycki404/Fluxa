@@ -302,12 +302,18 @@ end
 local function blendLayerTracksIntoPose(controller: ControllerInstance, finalPose: PoseData, layerName: string, layer: LayerState, dt: number)
 	for _, trackName in ipairs(controller._trackNames) do
 		local track = controller._tracks[trackName]
-		if track.Layer ~= layerName or not track.Track.IsPlaying then
+		if track.Layer ~= layerName then
 			continue
 		end
 
 		local logicalWeight = controller._smoothedTrackWeights[trackName] or 0
+		if logicalWeight <= 0 then
+			continue
+		end
 		local effectiveWeight = logicalWeight * track.Track.Weight
+		if effectiveWeight <= 0 then
+			continue
+		end
 		-- Always update to advance fade weight and animation time, even if we won't blend this frame.
 		local sample = track.Track:Update(dt)
 		local combinedWeight = clamp01(effectiveWeight * layer.Weight)
@@ -1050,6 +1056,12 @@ function FluxaController.Step(self: ControllerInstance, dt: number): PoseData
 				end
 			elseif not track.Track.IsPlaying then
 				beginTrackPlayback(self, trackName, track, track.Track.FadeInTime)
+			end
+		elseif not track.AutoManage then
+			if target > 0 and not track.Track.IsPlaying then
+				track.Track.IsPlaying = true
+			elseif target <= 0 and track.Track.IsPlaying then
+				track.Track.IsPlaying = false
 			end
 		end
 	end
