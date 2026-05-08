@@ -64,7 +64,6 @@ export type TrackConfig = {
 	TrackOptions: {[string]: any}?,
 	PreservePhaseOnSwap: boolean?,
 	Layer: string?,
-	AutoManage: boolean?,
 	AutoReplicate: boolean?,
 	InitialWeight: number?,
 	ReplicationSeekMode: ReplicationSeekMode?,
@@ -110,7 +109,6 @@ export type TrackState = {
 	Name: string,
 	Layer: string,
 	Track: any,
-	AutoManage: boolean,
 	AutoReplicate: boolean,
 	ReplicationSeekMode: ReplicationSeekMode,
 }
@@ -195,6 +193,7 @@ export type ControllerInstance = {
 	_jointMap: {[string]: any},
 	_retarget: {[string]: string},
 	_updateConnection: RBXScriptConnection?,
+	_loopConnections: {[string]: any},
 }
 
 -- Fluxa Service
